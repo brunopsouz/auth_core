@@ -26,23 +26,30 @@ public abstract class EntityBase
     public DateTime UpdateAt { get; protected set; }
 
     /// <summary>
-    /// Inicializa a entidade base definindo explicitamente a data de criação em UTC.
+    /// Inicializa a entidade base.
     /// </summary>
-    /// <param name="createdAt">Data e hora de criação em UTC.</param>
-    /// <param name="updateAt">Data e hora de criação em UTC.</param>
-    protected EntityBase(
-        DateTime createdAt,
-        DateTime updateAt)
+    protected EntityBase()
     {
         Id = Guid.NewGuid();
-        CreatedAt = createdAt;
-        UpdateAt = updateAt;
+        CreatedAt = DateTime.Now;
     }
 
     /// <summary>
-    /// Construtor protegido sem parâmetros.
+    /// Método utilizado para alterar a data de modificação.
     /// </summary>
-    protected EntityBase() { }
+    protected void SetUpdateData()
+    {
+        UpdateAt = DateTime.Now;
+    }
+
+    /// <summary>
+    /// Construtor com Id útil para ORMs.
+    /// </summary>
+    /// <param name="id">Identificador único.</param>
+    protected EntityBase(Guid id)
+    {
+        Id = id;
+    }
 
     /// <summary>
     /// Desativa a entidade (soft delete), marcando-a como inativa.
@@ -58,5 +65,53 @@ public abstract class EntityBase
     /// Ativa a entidade, marcando-a como ativa/visível novamente.
     /// </summary>
     public void Activate() => IsActive = true;
+
+    /// <summary>
+    /// Determina se o objeto especificado é igual à instância atual.
+    /// </summary>
+    /// <param name="obj">Objeto a ser comparado com a instância atual.</param>
+    /// <returns>true se o objeto for uma instância de <see cref="EntityBase"/> com o mesmo Id, caso contrário, false.</returns>
+    public override bool Equals(object? obj)
+    {
+        if(obj is not EntityBase other) 
+            return false;
+        if(ReferenceEquals(this, other)) 
+            return true;
+        return Id.Equals(other.Id);
+    }
+
+    /// <summary>
+    /// Retorna o código hash da instância atual.
+    /// </summary>
+    /// <returns>Código hash baseado no Id da entidade.</returns>
+    public override int GetHashCode()
+    {
+        return Id.GetHashCode();
+    }
+
+    /// <summary>
+    /// Compara duas instâncias de <see cref="EntityBase"/> para verificar se são iguais.
+    /// </summary>
+    /// <param name="left">Primeira instância a ser comparada</param>
+    /// <param name="right">Segunda instância a ser comparada.</param>
+    /// <returns>true se ambas forem nulas ou se tiverem o mesmo Id, caso contrário, false.</returns>
+    public static bool operator == (EntityBase left, EntityBase right)
+    {
+        if(ReferenceEquals(left, null))
+            return ReferenceEquals(right, null);
+
+        return left.Equals(right);
+    }
+
+    /// <summary>
+    /// Compara duas instâncias de <see cref="EntityBase"/> para verificar se são diferentes.
+    /// </summary>
+    /// <param name="left">Primeira instância a ser comparada</param>
+    /// <param name="right">Segunda instância a ser comparada.</param>
+    /// <returns>true se os objetos não forem iguais, caso contrário, false.</returns>
+    public static bool operator != (EntityBase left, EntityBase right)
+    {
+        return !left.Equals(right);
+    }
 }
 
