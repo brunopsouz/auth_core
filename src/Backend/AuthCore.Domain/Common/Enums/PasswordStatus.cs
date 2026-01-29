@@ -19,5 +19,15 @@ public enum PasswordStatus
     /// Status bloqueado.
     /// </summary>
     Blocked = 2,
+
+    /// <summary>
+    /// Status desativado.
+    /// </summary>
+    Deactivated = 3,
+
+    /// <summary>
+    /// Status removed para softdelete.
+    /// </summary>
+    Removed = 4   
        
 }

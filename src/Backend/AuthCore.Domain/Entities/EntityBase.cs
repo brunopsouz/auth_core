@@ -95,7 +95,7 @@ public abstract class EntityBase
     /// <param name="left">Primeira instância a ser comparada</param>
     /// <param name="right">Segunda instância a ser comparada.</param>
     /// <returns>true se ambas forem nulas ou se tiverem o mesmo Id, caso contrário, false.</returns>
-    public static bool operator == (EntityBase left, EntityBase right)
+    public static bool operator ==(EntityBase left, EntityBase right)
     {
         if(ReferenceEquals(left, null))
             return ReferenceEquals(right, null);

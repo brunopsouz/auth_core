@@ -23,7 +23,7 @@ public sealed class User : EntityBase
     /// <summary>
     /// E-mail do usuário.
     /// </summary>
-    public string Email { get; private set; } = null!;
+    public Email Email { get; private set; } = null!;
     
     /// <summary>
     /// Número de telefone/celular do usuário.
@@ -34,6 +34,11 @@ public sealed class User : EntityBase
     /// Identificador como uma segurança adicional do usuário ao ser utilizado no claims do token.
     /// </summary>
     public Guid UserIdentifier { get; private set; }
+
+    /// <summary>
+    /// Perfis de usuário.
+    /// </summary>
+    public Role Role { get; private set; }
 
     /// <summary>
     /// Construtor vazio.
@@ -48,22 +53,24 @@ public sealed class User : EntityBase
     /// <param name="fullName">Nome completo do usuário.</param>
     /// <param name="email">E-mail do usuário.</param>
     /// <param name="contact">Número de telefone/celular do usuário.</param>
+    /// <param name="role">Perfis de usuário.</param>
     private User(
         string firstName,
         string lastName,
         string fullName,
-        string email,
-        string contact
+        Email email,
+        string contact,
+        Role role
     )
     {
-        FirstName = firstName;
-        LastName = lastName;
+        FirstName = firstName.Trim();
+        LastName = lastName.Trim();
         FullName = fullName;
         Email = email;
         Contact = contact;
-
+        Role = role;
         UserIdentifier = Guid.NewGuid();
-
+        Validate();
     }
 
     /// <summary>
@@ -74,21 +81,24 @@ public sealed class User : EntityBase
     /// <param name="fullName">Nome completo do usuário.</param>
     /// <param name="email">E-mail do usuário.</param>
     /// <param name="contact">Número de contato do usuário.</param>
+    /// <param name="role">Perfis de usuário.</param>
     /// <returns></returns>
     public static User Create(
         string firstName,
         string lastName,
         string fullName,
         string email,
-        string contact
+        string contact, 
+        Role role
     )
     {
         return new User(
             firstName,
             lastName,
             fullName,
-            email,
-            contact
+            Email.Create(email),
+            contact,
+            role
         );
     }
     
@@ -100,22 +110,45 @@ public sealed class User : EntityBase
     /// <param name="fullName">Nome completo do usuário.</param>
     /// <param name="email">E-mail do usuário.</param>
     /// <param name="contact">Número de contato do usuário.</param>
+    /// <param name="role">Perfis de usuário.</param>
     /// <returns></returns>
     public static User Read(
         string firstName,
         string lastName,
         string fullName,
         string email,
-        string contact
+        string contact,
+        Role role
     )
     {
         return new User(
             firstName,
             lastName,
             fullName,
-            email,
-            contact
+            Email.Create(email),
+            contact,
+            role
         );
     }
+
+    /// <summary>
+    /// Valida os dados essenciais do usuário.
+    /// </summary>
+    private void Validate()
+    {
+        if(string.IsNullOrWhiteSpace(FirstName))
+            throw new Exception("O nome é obrigatório.");
+
+        if (string.IsNullOrWhiteSpace(LastName))
+            throw new Exception("O sobrenome é obrigatório.");
+
+        if (Email is null)
+            throw new Exception("O e-mail é obrigatório.");
+
+         if (!Enum.IsDefined(typeof(Role), Role))
+            throw new Exception("Perfil de usuário inválido.");
+
+    }
+
 
 }
