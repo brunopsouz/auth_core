@@ -1,0 +1,92 @@
+using AuthCore.Domain.Common.Enums;
+using AuthCore.Domain.Common.Exceptions;
+using AuthCore.Domain.Entities;
+
+namespace AuthCore.Domain.UnitTests.Aggregates.Passports;
+
+public class PasswordTests
+{
+    /// <summary>
+    /// Verifica se a criação da senha inicializa o controle de tentativas sem bloqueio.
+    /// </summary>
+    [Fact]
+    public void Create_WhenStateIsValid_ShouldInitializeWithCleanLoginAttempt()
+    {
+        var userId = Guid.NewGuid();
+
+        var password = Password.Create(userId, "hashed-password", PasswordStatus.Active);
+
+        Assert.Equal(userId, password.UserId);
+        Assert.Equal("hashed-password", password.Value);
+        Assert.Equal(PasswordStatus.Active, password.Status);
+        Assert.NotNull(password.LoginAttempt);
+        Assert.False(password.IsLocked());
+        Assert.Equal(0, password.LoginAttempt.FailedAttempts);
+    }
+
+    /// <summary>
+    /// Verifica se a criação da senha falha quando o identificador do usuário é inválido.
+    /// </summary>
+    [Fact]
+    public void Create_WhenUserIdIsEmpty_ShouldThrowDomainException()
+    {
+        Assert.Throws<DomainException>(() =>
+            Password.Create(Guid.Empty, "hashed-password", PasswordStatus.Active));
+    }
+
+    /// <summary>
+    /// Verifica se a restauração falha quando o status não corresponde ao bloqueio atual.
+    /// </summary>
+    [Fact]
+    public void Restore_WhenLoginAttemptIsLockedAndStatusIsNotBlocked_ShouldThrowDomainException()
+    {
+        var attempts = LoginAttempt.Restore(
+            failedAttempts: 5,
+            lastFailedAt: DateTime.UtcNow.AddMinutes(-1),
+            lockedUntil: DateTime.UtcNow.AddMinutes(10));
+
+        Assert.Throws<DomainException>(() =>
+            Password.Restore(Guid.NewGuid(), "hashed-password", attempts, PasswordStatus.Active));
+    }
+
+    /// <summary>
+    /// Verifica se o registro da quinta falha bloqueia a senha.
+    /// </summary>
+    [Fact]
+    public void RegisterLoginFailure_WhenThresholdIsReached_ShouldBlockPassword()
+    {
+        var password = Password.Create(Guid.NewGuid(), "hashed-password", PasswordStatus.Active);
+
+        for (var i = 0; i < 5; i++)
+            password = password.RegisterLoginFailure();
+
+        Assert.Equal(PasswordStatus.Blocked, password.Status);
+        Assert.True(password.IsLocked());
+        Assert.NotNull(password.GetLockMessage());
+    }
+
+    /// <summary>
+    /// Verifica se o reset das tentativas remove o bloqueio e retorna o status para ativo.
+    /// </summary>
+    [Fact]
+    public void ResetLoginAttempts_WhenPasswordIsBlocked_ShouldResetAttemptsAndActivate()
+    {
+        var attempts = LoginAttempt.Restore(
+            failedAttempts: 5,
+            lastFailedAt: DateTime.UtcNow.AddMinutes(-1),
+            lockedUntil: DateTime.UtcNow.AddMinutes(10));
+
+        var password = Password.Restore(
+            Guid.NewGuid(),
+            "hashed-password",
+            attempts,
+            PasswordStatus.Blocked);
+
+        var updatedPassword = password.ResetLoginAttempts();
+
+        Assert.Equal(PasswordStatus.Active, updatedPassword.Status);
+        Assert.False(updatedPassword.IsLocked());
+        Assert.Equal(0, updatedPassword.LoginAttempt.FailedAttempts);
+        Assert.Null(updatedPassword.LoginAttempt.LockedUntil);
+    }
+}

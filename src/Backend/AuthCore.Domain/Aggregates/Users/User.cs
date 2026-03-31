@@ -82,7 +82,7 @@ public sealed class User : EntityBase
     /// <param name="email">E-mail do usuário.</param>
     /// <param name="contact">Número de contato do usuário.</param>
     /// <param name="role">Perfis de usuário.</param>
-    /// <returns></returns>
+    /// <returns>Nova instância de <see cref="User"/> com os dados informados.</returns>
     public static User Create(
         string firstName,
         string lastName,
@@ -111,7 +111,7 @@ public sealed class User : EntityBase
     /// <param name="email">E-mail do usuário.</param>
     /// <param name="contact">Número de contato do usuário.</param>
     /// <param name="role">Perfis de usuário.</param>
-    /// <returns></returns>
+    /// <returns>Instância de <see cref="User"/> reconstruída a partir dos dados informados.</returns>
     public static User Read(
         string firstName,
         string lastName,
