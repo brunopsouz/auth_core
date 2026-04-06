@@ -1,7 +1,9 @@
+using AuthCore.Domain.Common.Exceptions;
+
 namespace AuthCore.Domain.Entities;
 
 /// <summary>
-/// Entidade para contas de usuário.
+/// Representa uma conta de usuário.
 /// </summary>
 public sealed class User : EntityBase
 {
@@ -9,7 +11,7 @@ public sealed class User : EntityBase
     /// Primeiro nome do usuário.
     /// </summary>
     public string FirstName { get; private set; } = null!;
-    
+
     /// <summary>
     /// Sobrenome do usuário.
     /// </summary>
@@ -19,136 +21,234 @@ public sealed class User : EntityBase
     /// Nome completo do usuário.
     /// </summary>
     public string FullName { get; private set; } = null!;
-    
+
     /// <summary>
     /// E-mail do usuário.
     /// </summary>
     public Email Email { get; private set; } = null!;
-    
+
     /// <summary>
-    /// Número de telefone/celular do usuário.
+    /// Número de telefone ou celular do usuário.
     /// </summary>
     public string Contact { get; private set; } = null!;
-    
+
     /// <summary>
-    /// Identificador como uma segurança adicional do usuário ao ser utilizado no claims do token.
+    /// Identificador adicional do usuário para uso em claims.
     /// </summary>
     public Guid UserIdentifier { get; private set; }
 
     /// <summary>
-    /// Perfis de usuário.
+    /// Perfil do usuário.
     /// </summary>
     public Role Role { get; private set; }
 
     /// <summary>
-    /// Construtor vazio.
+    /// Data da verificação do e-mail.
     /// </summary>
-    private User() {}
+    public DateTime? EmailVerifiedAt { get; private set; }
 
     /// <summary>
-    /// Construtor de inicialização dos parametros.
+    /// Indica se o e-mail já foi verificado.
+    /// </summary>
+    public bool IsEmailVerified => EmailVerifiedAt.HasValue;
+
+    /// <summary>
+    /// Indica se o usuário pode autenticar.
+    /// </summary>
+    public bool CanSignIn => IsActive && IsEmailVerified;
+
+    #region Constructors
+
+    /// <summary>
+    /// Operação para criar instância da classe.
+    /// </summary>
+    private User()
+    {
+    }
+
+    /// <summary>
+    /// Operação para criar instância da classe.
     /// </summary>
     /// <param name="firstName">Primeiro nome do usuário.</param>
     /// <param name="lastName">Sobrenome do usuário.</param>
     /// <param name="fullName">Nome completo do usuário.</param>
     /// <param name="email">E-mail do usuário.</param>
-    /// <param name="contact">Número de telefone/celular do usuário.</param>
-    /// <param name="role">Perfis de usuário.</param>
+    /// <param name="contact">Número de contato do usuário.</param>
+    /// <param name="role">Perfil do usuário.</param>
+    /// <param name="userIdentifier">Identificador adicional do usuário.</param>
+    /// <param name="emailVerifiedAt">Data da verificação do e-mail.</param>
     private User(
         string firstName,
         string lastName,
         string fullName,
         Email email,
         string contact,
-        Role role
-    )
+        Role role,
+        Guid userIdentifier,
+        DateTime? emailVerifiedAt)
     {
         FirstName = firstName.Trim();
         LastName = lastName.Trim();
-        FullName = fullName;
+        FullName = fullName.Trim();
         Email = email;
-        Contact = contact;
+        Contact = contact.Trim();
         Role = role;
-        UserIdentifier = Guid.NewGuid();
+        UserIdentifier = userIdentifier;
+        EmailVerifiedAt = emailVerifiedAt;
+
         Validate();
     }
 
+    #endregion
+
+    #region Factory
+
     /// <summary>
-    /// Construtor para criação de um novo usuário.
+    /// Operação para registrar um novo usuário.
     /// </summary>
-    /// <param name="firstName">Primeiro nome do usuário</param>
+    /// <param name="firstName">Primeiro nome do usuário.</param>
+    /// <param name="lastName">Sobrenome do usuário.</param>
+    /// <param name="email">E-mail do usuário.</param>
+    /// <param name="contact">Número de contato do usuário.</param>
+    /// <param name="role">Perfil do usuário.</param>
+    /// <returns>Instância de <see cref="User"/> registrada.</returns>
+    public static User Register(
+        string firstName,
+        string lastName,
+        string email,
+        string contact,
+        Role role)
+    {
+        var normalizedFirstName = firstName.Trim();
+        var normalizedLastName = lastName.Trim();
+
+        return new User(
+            normalizedFirstName,
+            normalizedLastName,
+            BuildFullName(normalizedFirstName, normalizedLastName),
+            Email.Create(email),
+            contact,
+            role,
+            Guid.NewGuid(),
+            emailVerifiedAt: null);
+    }
+
+    /// <summary>
+    /// Operação para criar um novo usuário.
+    /// </summary>
+    /// <param name="firstName">Primeiro nome do usuário.</param>
     /// <param name="lastName">Sobrenome do usuário.</param>
     /// <param name="fullName">Nome completo do usuário.</param>
     /// <param name="email">E-mail do usuário.</param>
     /// <param name="contact">Número de contato do usuário.</param>
-    /// <param name="role">Perfis de usuário.</param>
-    /// <returns>Nova instância de <see cref="User"/> com os dados informados.</returns>
+    /// <param name="role">Perfil do usuário.</param>
+    /// <returns>Instância de <see cref="User"/> criada.</returns>
     public static User Create(
         string firstName,
         string lastName,
         string fullName,
         string email,
-        string contact, 
-        Role role
-    )
+        string contact,
+        Role role)
     {
         return new User(
             firstName,
             lastName,
-            fullName,
+            string.IsNullOrWhiteSpace(fullName) ? BuildFullName(firstName, lastName) : fullName,
             Email.Create(email),
             contact,
-            role
-        );
+            role,
+            Guid.NewGuid(),
+            emailVerifiedAt: null);
     }
-    
+
     /// <summary>
-    /// Construtor para leitura do objeto User.
+    /// Operação para reconstruir um usuário.
     /// </summary>
-    /// <param name="firstName">Primeiro nome do usuário</param>
+    /// <param name="firstName">Primeiro nome do usuário.</param>
     /// <param name="lastName">Sobrenome do usuário.</param>
     /// <param name="fullName">Nome completo do usuário.</param>
     /// <param name="email">E-mail do usuário.</param>
     /// <param name="contact">Número de contato do usuário.</param>
-    /// <param name="role">Perfis de usuário.</param>
-    /// <returns>Instância de <see cref="User"/> reconstruída a partir dos dados informados.</returns>
+    /// <param name="role">Perfil do usuário.</param>
+    /// <param name="userIdentifier">Identificador adicional do usuário.</param>
+    /// <param name="emailVerifiedAt">Data da verificação do e-mail.</param>
+    /// <returns>Instância de <see cref="User"/> reconstruída.</returns>
     public static User Read(
         string firstName,
         string lastName,
         string fullName,
         string email,
         string contact,
-        Role role
-    )
+        Role role,
+        Guid? userIdentifier = null,
+        DateTime? emailVerifiedAt = null)
     {
         return new User(
             firstName,
             lastName,
-            fullName,
+            string.IsNullOrWhiteSpace(fullName) ? BuildFullName(firstName, lastName) : fullName,
             Email.Create(email),
             contact,
-            role
-        );
+            role,
+            userIdentifier ?? Guid.NewGuid(),
+            emailVerifiedAt);
+    }
+
+    #endregion
+
+    /// <summary>
+    /// Operação para verificar o e-mail do usuário.
+    /// </summary>
+    /// <param name="verifiedAt">Data da verificação do e-mail.</param>
+    public void VerifyEmail(DateTime verifiedAt)
+    {
+        DomainException.When(verifiedAt == default, "A data de verificação do e-mail é obrigatória.");
+
+        if (IsEmailVerified)
+            return;
+
+        EmailVerifiedAt = verifiedAt;
+        SetUpdateData();
     }
 
     /// <summary>
-    /// Valida os dados essenciais do usuário.
+    /// Operação para alterar o e-mail do usuário.
+    /// </summary>
+    /// <param name="email">Novo e-mail do usuário.</param>
+    public void ChangeEmail(string email)
+    {
+        Email = Email.Create(email);
+        EmailVerifiedAt = null;
+        SetUpdateData();
+    }
+
+    #region Helpers
+
+    /// <summary>
+    /// Operação para montar o nome completo do usuário.
+    /// </summary>
+    /// <param name="firstName">Primeiro nome do usuário.</param>
+    /// <param name="lastName">Sobrenome do usuário.</param>
+    /// <returns>Nome completo do usuário.</returns>
+    private static string BuildFullName(string firstName, string lastName)
+    {
+        return $"{firstName.Trim()} {lastName.Trim()}";
+    }
+
+    /// <summary>
+    /// Operação para validar os dados do usuário.
     /// </summary>
     private void Validate()
     {
-        if(string.IsNullOrWhiteSpace(FirstName))
-            throw new Exception("O nome é obrigatório.");
-
-        if (string.IsNullOrWhiteSpace(LastName))
-            throw new Exception("O sobrenome é obrigatório.");
-
-        if (Email is null)
-            throw new Exception("O e-mail é obrigatório.");
-
-         if (!Enum.IsDefined(typeof(Role), Role))
-            throw new Exception("Perfil de usuário inválido.");
-
+        DomainException.When(string.IsNullOrWhiteSpace(FirstName), "O nome é obrigatório.");
+        DomainException.When(string.IsNullOrWhiteSpace(LastName), "O sobrenome é obrigatório.");
+        DomainException.When(string.IsNullOrWhiteSpace(FullName), "O nome completo é obrigatório.");
+        DomainException.When(Email is null, "O e-mail é obrigatório.");
+        DomainException.When(string.IsNullOrWhiteSpace(Contact), "O contato é obrigatório.");
+        DomainException.When(UserIdentifier == Guid.Empty, "O identificador do usuário é obrigatório.");
+        DomainException.When(!Enum.IsDefined(typeof(Role), Role), "Perfil de usuário inválido.");
     }
 
-
+    #endregion
 }

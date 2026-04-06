@@ -152,14 +152,14 @@ public sealed class Password
     /// <summary>
     /// Reseta as tentativas de login após autenticação bem-sucedida ou desbloqueio.
     /// </summary>
+    /// <param name="restoredStatus">Status que a senha deve retomar após o reset das tentativas.</param>
     /// <returns>Nova instância de <see cref="Password"/> com tentativas zeradas.</returns>
-    public Password ResetLoginAttempts()
+    public Password ResetLoginAttempts(PasswordStatus restoredStatus)
     {
-        var updatedStatus = Status == PasswordStatus.Blocked
-            ? PasswordStatus.Active
-            : Status;
+        if (restoredStatus == PasswordStatus.Blocked)
+            throw new DomainException("O status restaurado não pode ser bloqueado após o reset das tentativas.");
 
-        return new Password(UserId, Value, LoginAttempt.Reset(), updatedStatus);
+        return new Password(UserId, Value, LoginAttempt.Reset(), restoredStatus);
     }
 
     /// <summary>

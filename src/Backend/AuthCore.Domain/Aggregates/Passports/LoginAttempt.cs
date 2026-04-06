@@ -185,6 +185,9 @@ public sealed class LoginAttempt
         if (failedAttempts > 0 && !lastFailedAt.HasValue)
             throw new DomainException("A data da última falha é obrigatória quando existem tentativas registradas.");
 
+        if (failedAttempts >= MAX_ATTEMPTS && !lockedUntil.HasValue)
+            throw new DomainException("O bloqueio deve ser informado quando o limite de tentativas falhas for atingido.");
+
         if (lockedUntil.HasValue && failedAttempts < MAX_ATTEMPTS)
             throw new DomainException("O bloqueio só pode existir quando o limite de tentativas falhas for atingido.");
 

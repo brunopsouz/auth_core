@@ -86,4 +86,16 @@ public class LoginAttemptTests
             lastFailedAt: null,
             lockedUntil: null));
     }
+
+    /// <summary>
+    /// Verifica se a restauração falha quando o limite de falhas é atingido sem data de bloqueio.
+    /// </summary>
+    [Fact]
+    public void Restore_WhenThresholdIsReachedWithoutLockExpiration_ShouldThrowDomainException()
+    {
+        Assert.Throws<DomainException>(() => LoginAttempt.Restore(
+            failedAttempts: 5,
+            lastFailedAt: DateTime.UtcNow.AddMinutes(-1),
+            lockedUntil: null));
+    }
 }

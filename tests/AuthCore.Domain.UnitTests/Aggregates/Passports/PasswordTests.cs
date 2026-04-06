@@ -66,10 +66,10 @@ public class PasswordTests
     }
 
     /// <summary>
-    /// Verifica se o reset das tentativas remove o bloqueio e retorna o status para ativo.
+    /// Verifica se o reset das tentativas remove o bloqueio e restaura o status informado.
     /// </summary>
     [Fact]
-    public void ResetLoginAttempts_WhenPasswordIsBlocked_ShouldResetAttemptsAndActivate()
+    public void ResetLoginAttempts_WhenPasswordIsBlocked_ShouldResetAttemptsAndRestoreGivenStatus()
     {
         var attempts = LoginAttempt.Restore(
             failedAttempts: 5,
@@ -82,11 +82,31 @@ public class PasswordTests
             attempts,
             PasswordStatus.Blocked);
 
-        var updatedPassword = password.ResetLoginAttempts();
+        var updatedPassword = password.ResetLoginAttempts(PasswordStatus.FirstAccess);
 
-        Assert.Equal(PasswordStatus.Active, updatedPassword.Status);
+        Assert.Equal(PasswordStatus.FirstAccess, updatedPassword.Status);
         Assert.False(updatedPassword.IsLocked());
         Assert.Equal(0, updatedPassword.LoginAttempt.FailedAttempts);
         Assert.Null(updatedPassword.LoginAttempt.LockedUntil);
+    }
+
+    /// <summary>
+    /// Verifica se o reset das tentativas rejeita a manutenção do status bloqueado.
+    /// </summary>
+    [Fact]
+    public void ResetLoginAttempts_WhenRestoredStatusIsBlocked_ShouldThrowDomainException()
+    {
+        var attempts = LoginAttempt.Restore(
+            failedAttempts: 5,
+            lastFailedAt: DateTime.UtcNow.AddMinutes(-1),
+            lockedUntil: DateTime.UtcNow.AddMinutes(10));
+
+        var password = Password.Restore(
+            Guid.NewGuid(),
+            "hashed-password",
+            attempts,
+            PasswordStatus.Blocked);
+
+        Assert.Throws<DomainException>(() => password.ResetLoginAttempts(PasswordStatus.Blocked));
     }
 }
