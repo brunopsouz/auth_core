@@ -1,4 +1,4 @@
-using AuthCore.Domain.Abstractions.Data;
+using AuthCore.Infrastructure.Abstractions.Data;
 using AuthCore.Infrastructure.Configurations;
 using AuthCore.Infrastructure.Persistences.Migrations.Versions;
 using AuthCore.Infrastructure.Persistences.PostgreSQL.Connections;
@@ -50,7 +50,7 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(RabbitMqOptions.SectionName))
             .ValidateDataAnnotations();
 
-        services.AddSingleton<IDbConnectionFactory, NpgsqlConnectionFactory>();
+        services.AddScoped<IDbConnectionFactory, NpgsqlConnectionFactory>();
 
         var connectionString = configuration.GetConnectionString("PostgreSql")
             ?? configuration.GetSection(DatabaseOptions.SectionName).GetValue<string>(nameof(DatabaseOptions.PostgreSql))

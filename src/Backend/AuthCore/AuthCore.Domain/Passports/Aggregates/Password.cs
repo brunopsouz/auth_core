@@ -1,21 +1,22 @@
 using System.Text.RegularExpressions;
+using AuthCore.Domain.Common.Aggregates;
 using AuthCore.Domain.Common.Enums;
 using AuthCore.Domain.Common.Exceptions;
 
-namespace AuthCore.Domain.Entities;
+namespace AuthCore.Domain.Passports.Aggregates;
 
 /// <summary>
-/// Entidade responsável pelo gerenciamento da senha do usuário.
+/// Representa a credencial de autenticação do usuário.
 /// </summary>
-public sealed class Password
+public sealed class Password : AggregateRoot
 {
     private const int MIN_LENGTH = 8;
     private const int MAX_LENGTH = 24;
-    
+
     /// <summary>
     /// Identificador único do usuário associado à senha.
     /// </summary>
-    public Guid UserId { get; private set; }
+    public Guid UserId => Id;
 
     /// <summary>
     /// Valor da senha armazenada para o usuário.
@@ -48,19 +49,24 @@ public sealed class Password
         Guid userId,
         string hashedPassword,
         LoginAttempt attempts,
-        PasswordStatus status)
+        PasswordStatus status) : base(userId)
     {
         ValidateState(userId, hashedPassword, attempts, status);
-        UserId = userId;
         Value = hashedPassword;
         Status = status;
         LoginAttempt = attempts;
     }
 
+    #region Constructors
+
     /// <summary>
     /// Construtor sem parâmetros utilizado por ferramentas de materialização.
     /// </summary>
     private Password() { }
+
+    #endregion
+
+    #region Factory
 
     /// <summary>
     /// Cria a senha com o valor já criptografado.
@@ -98,6 +104,8 @@ public sealed class Password
     {
         return new Password(userId, hashedPassword, attempts, status);
     }
+
+    #endregion
 
     /// <summary>
     /// Valida os critérios mínimos da senha.
@@ -180,6 +188,8 @@ public sealed class Password
         return LoginAttempt.GetLockMessage();
     }
 
+    #region Helpers
+
     /// <summary>
     /// Valida a consistência do estado interno da senha.
     /// </summary>
@@ -214,4 +224,6 @@ public sealed class Password
         if (!isLocked && status == PasswordStatus.Blocked)
             throw new DomainException("O status bloqueado exige um bloqueio de login ativo.");
     }
+
+    #endregion
 }

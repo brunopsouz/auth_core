@@ -1,7 +1,9 @@
 using AuthCore.Domain.Common.Aggregates;
 using AuthCore.Domain.Common.Exceptions;
+using AuthCore.Domain.Users.Enums;
+using AuthCore.Domain.Users.ValueObjects;
 
-namespace AuthCore.Domain.Users;
+namespace AuthCore.Domain.Users.Aggregates;
 
 /// <summary>
 /// Representa uma conta de usuário.

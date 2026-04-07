@@ -1,12 +1,13 @@
 using System.Text.RegularExpressions;
 using AuthCore.Domain.Common.Exceptions;
+using AuthCore.Domain.Common.ValueObjects;
 
-namespace AuthCore.Domain.Users;
+namespace AuthCore.Domain.Users.ValueObjects;
 
 /// <summary>
 /// Representa um endereço de e-mail validado do domínio.
 /// </summary>
-public sealed class Email : IEquatable<Email>
+public sealed class Email : ValueObject
 {
     /// <summary>
     /// Valor normalizado do e-mail.
@@ -96,38 +97,22 @@ public sealed class Email : IEquatable<Email>
     }
 
     /// <summary>
-    /// Operação para comparar este e-mail com outro.
-    /// </summary>
-    /// <param name="other">Outro e-mail para comparação.</param>
-    /// <returns><c>true</c> quando os valores são equivalentes.</returns>
-    public bool Equals(Email? other)
-    {
-        if (other is null)
-            return false;
-
-        if (ReferenceEquals(this, other))
-            return true;
-
-        return string.Equals(Value, other.Value, StringComparison.Ordinal);
-    }
-
-    /// <summary>
     /// Operação para comparar este e-mail com outro objeto.
     /// </summary>
     /// <param name="obj">Objeto a ser comparado.</param>
     /// <returns><c>true</c> quando os valores são equivalentes.</returns>
     public override bool Equals(object? obj)
     {
-        return Equals(obj as Email);
+        return base.Equals(obj);
     }
 
     /// <summary>
     /// Operação para obter o hash code do e-mail.
     /// </summary>
-    /// <returns>Hash code baseado no valor normalizado.</returns>
+    /// <returns>Código hash baseado no valor normalizado.</returns>
     public override int GetHashCode()
     {
-        return StringComparer.Ordinal.GetHashCode(Value);
+        return base.GetHashCode();
     }
 
     /// <summary>
@@ -151,4 +136,17 @@ public sealed class Email : IEquatable<Email>
     {
         return !Equals(left, right);
     }
+
+    #region Helpers
+
+    /// <summary>
+    /// Operação para obter os componentes usados na igualdade.
+    /// </summary>
+    /// <returns>Componentes utilizados na comparação.</returns>
+    protected override IEnumerable<object> GetEqualityComponents()
+    {
+        yield return Value;
+    }
+
+    #endregion
 }

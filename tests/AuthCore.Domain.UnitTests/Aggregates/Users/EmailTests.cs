@@ -1,5 +1,5 @@
 using AuthCore.Domain.Common.Exceptions;
-using AuthCore.Domain.Entities;
+using AuthCore.Domain.Users.ValueObjects;
 
 namespace AuthCore.Domain.UnitTests.Aggregates.Users;
 

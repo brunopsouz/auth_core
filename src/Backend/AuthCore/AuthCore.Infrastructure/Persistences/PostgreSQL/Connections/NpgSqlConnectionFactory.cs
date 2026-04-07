@@ -1,5 +1,5 @@
 using System.Data;
-using AuthCore.Domain.Abstractions.Data;
+using AuthCore.Infrastructure.Abstractions.Data;
 using AuthCore.Infrastructure.Configurations;
 using Microsoft.Extensions.Options;
 using Npgsql;

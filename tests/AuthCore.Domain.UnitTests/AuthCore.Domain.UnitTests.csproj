@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Backend\AuthCore.Domain\AuthCore.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Backend\AuthCore\AuthCore.Domain\AuthCore.Domain.csproj" />
   </ItemGroup>
 
 </Project>
