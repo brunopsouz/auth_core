@@ -1,4 +1,4 @@
-namespace AuthCore.Application.Users.Models.Requests;
+namespace AuthCore.Api.Contracts.Requests;
 
 /// <summary>
 /// Representa requisição para alterar a senha do usuário.

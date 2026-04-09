@@ -1,6 +1,4 @@
-using AuthCore.Application.Users.Models.Requests;
-
-namespace AuthCore.Application.Users.UseCases.Update;
+namespace AuthCore.Application.Users.UseCases.UpdateUser;
 
 /// <summary>
 /// Define operação para atualizar o perfil do usuário autenticado.
@@ -10,6 +8,6 @@ public interface IUpdateUserUseCase
     /// <summary>
     /// Operação para atualizar o perfil do usuário autenticado.
     /// </summary>
-    /// <param name="request">Dados da requisição de atualização.</param>
-    Task Execute(RequestUpdateUserJson request);
+    /// <param name="command">Comando com os dados da atualização.</param>
+    Task Execute(UpdateUserCommand command);
 }

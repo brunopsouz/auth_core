@@ -1,4 +1,4 @@
-namespace AuthCore.Application.Users.Models.Responses;
+namespace AuthCore.Api.Contracts.Responses;
 
 /// <summary>
 /// Representa resposta de usuário registrado.

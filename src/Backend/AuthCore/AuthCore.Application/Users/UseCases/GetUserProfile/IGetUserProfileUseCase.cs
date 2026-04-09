@@ -1,5 +1,3 @@
-using AuthCore.Application.Users.Models.Responses;
-
 namespace AuthCore.Application.Users.UseCases.GetUserProfile;
 
 /// <summary>
@@ -10,6 +8,7 @@ public interface IGetUserProfileUseCase
     /// <summary>
     /// Operação para obter o perfil do usuário autenticado.
     /// </summary>
-    /// <returns>Resposta com os dados do perfil do usuário.</returns>
-    Task<ResponseUserProfileJson> Execute();
+    /// <param name="query">Consulta do perfil do usuário.</param>
+    /// <returns>Resultado com os dados do perfil do usuário.</returns>
+    Task<GetUserProfileResult> Execute(GetUserProfileQuery query);
 }
