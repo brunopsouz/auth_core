@@ -14,20 +14,6 @@ public interface IUserRepository
     Task AddAsync(User user);
 
     /// <summary>
-    /// Operação para obter um usuário pelo identificador público.
-    /// </summary>
-    /// <param name="userIdentifier">Identificador público do usuário.</param>
-    /// <returns>Usuário encontrado ou nulo.</returns>
-    Task<User?> GetByUserIdentifierAsync(Guid userIdentifier);
-
-    /// <summary>
-    /// Operação para obter um usuário pelo e-mail.
-    /// </summary>
-    /// <param name="email">E-mail do usuário.</param>
-    /// <returns>Usuário encontrado ou nulo.</returns>
-    Task<User?> GetByEmailAsync(string email);
-
-    /// <summary>
     /// Operação para atualizar um usuário.
     /// </summary>
     /// <param name="user">Usuário a ser atualizado.</param>

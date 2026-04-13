@@ -4,7 +4,7 @@ using AuthCore.Infrastructure.Configurations;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace AuthCore.Infrastructure.Persistences.PostgreSQL.Connections;
+namespace AuthCore.Infrastructure.Persistences.Write.PostgreSQL.Connections;
 
 /// <summary>
 /// Representa a fábrica de conexões PostgreSQL.

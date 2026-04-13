@@ -6,6 +6,11 @@ namespace AuthCore.Application.Users.UseCases.UpdateUser;
 public sealed class UpdateUserCommand
 {
     /// <summary>
+    /// Identificador público do usuário autenticado.
+    /// </summary>
+    public Guid UserIdentifier { get; set; }
+
+    /// <summary>
     /// Primeiro nome do usuário.
     /// </summary>
     public string FirstName { get; set; } = string.Empty;

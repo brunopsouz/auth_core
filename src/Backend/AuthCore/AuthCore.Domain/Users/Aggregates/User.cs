@@ -102,6 +102,48 @@ public sealed class User : AggregateRoot
         Validate();
     }
 
+    /// <summary>
+    /// Operação para criar instância da classe.
+    /// </summary>
+    /// <param name="id">Identificador interno do usuário.</param>
+    /// <param name="createdAt">Data de criação persistida.</param>
+    /// <param name="updateAt">Data da última atualização persistida.</param>
+    /// <param name="isActive">Status de atividade persistido.</param>
+    /// <param name="firstName">Primeiro nome do usuário.</param>
+    /// <param name="lastName">Sobrenome do usuário.</param>
+    /// <param name="fullName">Nome completo do usuário.</param>
+    /// <param name="email">E-mail do usuário.</param>
+    /// <param name="contact">Número de contato do usuário.</param>
+    /// <param name="role">Perfil do usuário.</param>
+    /// <param name="userIdentifier">Identificador adicional do usuário.</param>
+    /// <param name="emailVerifiedAt">Data da verificação do e-mail.</param>
+    private User(
+        Guid id,
+        DateTime createdAt,
+        DateTime updateAt,
+        bool isActive,
+        string firstName,
+        string lastName,
+        string fullName,
+        Email email,
+        string contact,
+        Role role,
+        Guid userIdentifier,
+        DateTime? emailVerifiedAt)
+        : base(id, createdAt, updateAt, isActive)
+    {
+        FirstName = firstName.Trim();
+        LastName = lastName.Trim();
+        FullName = fullName.Trim();
+        Email = email;
+        Contact = contact.Trim();
+        Role = role;
+        UserIdentifier = userIdentifier;
+        EmailVerifiedAt = emailVerifiedAt;
+
+        Validate();
+    }
+
     #endregion
 
     #region Factory
@@ -198,6 +240,51 @@ public sealed class User : AggregateRoot
             emailVerifiedAt);
     }
 
+    /// <summary>
+    /// Operação para reconstruir um usuário persistido.
+    /// </summary>
+    /// <param name="id">Identificador interno do usuário.</param>
+    /// <param name="createdAt">Data de criação persistida.</param>
+    /// <param name="updateAt">Data da última atualização persistida.</param>
+    /// <param name="isActive">Status de atividade persistido.</param>
+    /// <param name="firstName">Primeiro nome do usuário.</param>
+    /// <param name="lastName">Sobrenome do usuário.</param>
+    /// <param name="fullName">Nome completo do usuário.</param>
+    /// <param name="email">E-mail do usuário.</param>
+    /// <param name="contact">Número de contato do usuário.</param>
+    /// <param name="role">Perfil do usuário.</param>
+    /// <param name="userIdentifier">Identificador adicional do usuário.</param>
+    /// <param name="emailVerifiedAt">Data da verificação do e-mail.</param>
+    /// <returns>Instância de <see cref="User"/> reconstruída.</returns>
+    public static User Restore(
+        Guid id,
+        DateTime createdAt,
+        DateTime updateAt,
+        bool isActive,
+        string firstName,
+        string lastName,
+        string fullName,
+        string email,
+        string contact,
+        Role role,
+        Guid userIdentifier,
+        DateTime? emailVerifiedAt)
+    {
+        return new User(
+            id,
+            createdAt,
+            updateAt,
+            isActive,
+            firstName,
+            lastName,
+            string.IsNullOrWhiteSpace(fullName) ? BuildFullName(firstName, lastName) : fullName,
+            Email.Create(email),
+            contact,
+            role,
+            userIdentifier,
+            emailVerifiedAt);
+    }
+
     #endregion
 
     /// <summary>
@@ -223,6 +310,26 @@ public sealed class User : AggregateRoot
     {
         Email = Email.Create(email);
         EmailVerifiedAt = null;
+        SetUpdateData();
+    }
+
+    /// <summary>
+    /// Operação para atualizar os dados do perfil do usuário.
+    /// </summary>
+    /// <param name="firstName">Primeiro nome do usuário.</param>
+    /// <param name="lastName">Sobrenome do usuário.</param>
+    /// <param name="contact">Número de contato do usuário.</param>
+    public void UpdateProfile(
+        string firstName,
+        string lastName,
+        string contact)
+    {
+        FirstName = firstName.Trim();
+        LastName = lastName.Trim();
+        FullName = BuildFullName(firstName, lastName);
+        Contact = contact.Trim();
+
+        Validate();
         SetUpdateData();
     }
 

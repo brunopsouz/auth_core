@@ -171,6 +171,28 @@ public sealed class Password : AggregateRoot
     }
 
     /// <summary>
+    /// Operação para alterar a senha criptografada.
+    /// </summary>
+    /// <param name="hashedPassword">Novo valor criptografado da senha.</param>
+    /// <param name="status">Novo status da senha.</param>
+    /// <returns>Nova instância de <see cref="Password"/> com a senha atualizada.</returns>
+    public Password Change(
+        string hashedPassword,
+        PasswordStatus status)
+    {
+        return new Password(UserId, hashedPassword, LoginAttempt.Reset(), status);
+    }
+
+    /// <summary>
+    /// Operação para desativar a senha do usuário.
+    /// </summary>
+    /// <returns>Nova instância de <see cref="Password"/> desativada.</returns>
+    public Password MarkAsDeactivated()
+    {
+        return new Password(UserId, Value, LoginAttempt.Reset(), PasswordStatus.Deactivated);
+    }
+
+    /// <summary>
     /// Indica se a senha está temporariamente bloqueada para autenticação.
     /// </summary>
     /// <returns><c>true</c> quando existe bloqueio ativo; caso contrário, <c>false</c>.</returns>

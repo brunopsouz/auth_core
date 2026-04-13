@@ -5,4 +5,8 @@ namespace AuthCore.Application.Users.UseCases.GetUserProfile;
 /// </summary>
 public sealed class GetUserProfileQuery
 {
+    /// <summary>
+    /// Identificador público do usuário autenticado.
+    /// </summary>
+    public Guid UserIdentifier { get; set; }
 }

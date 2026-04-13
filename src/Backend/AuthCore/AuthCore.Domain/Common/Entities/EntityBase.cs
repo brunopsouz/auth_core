@@ -32,6 +32,7 @@ public abstract class EntityBase
     {
         Id = Guid.NewGuid();
         CreatedAt = DateTime.Now;
+        UpdateAt = CreatedAt;
     }
 
     /// <summary>
@@ -52,19 +53,47 @@ public abstract class EntityBase
     }
 
     /// <summary>
+    /// Construtor utilizado para reconstituir a entidade com o estado persistido.
+    /// </summary>
+    /// <param name="id">Identificador único.</param>
+    /// <param name="createdAt">Data de criação persistida.</param>
+    /// <param name="updateAt">Data da última atualização persistida.</param>
+    /// <param name="isActive">Status de atividade persistido.</param>
+    protected EntityBase(
+        Guid id,
+        DateTime createdAt,
+        DateTime updateAt,
+        bool isActive)
+    {
+        Id = id;
+        CreatedAt = createdAt;
+        UpdateAt = updateAt;
+        IsActive = isActive;
+    }
+
+    /// <summary>
     /// Desativa a entidade (soft delete), marcando-a como inativa.
     /// </summary>
     public void Deactivate()
     {
-        if (!IsActive) return; 
+        if (!IsActive)
+            return;
+
         IsActive = false;
-        // AddDomainEvent(new EntityDeactivatedEvent(...)) //events
+        SetUpdateData();
     }
 
     /// <summary>
     /// Ativa a entidade, marcando-a como ativa/visível novamente.
     /// </summary>
-    public void Activate() => IsActive = true;
+    public void Activate()
+    {
+        if (IsActive)
+            return;
+
+        IsActive = true;
+        SetUpdateData();
+    }
 
     /// <summary>
     /// Determina se o objeto especificado é igual à instância atual.
@@ -114,4 +143,3 @@ public abstract class EntityBase
         return !left.Equals(right);
     }
 }
-

@@ -8,6 +8,7 @@ using AuthCore.Application.Users.UseCases.GetUserProfile;
 using AuthCore.Application.Users.UseCases.RegisterUser;
 using AuthCore.Application.Users.UseCases.UpdateUser;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace AuthCore.Api.Controllers;
 
@@ -31,9 +32,23 @@ public sealed class UserController : ControllerBase
         [FromServices] IRegisterUserUseCase useCase,
         [FromBody] RequestRegisterUserJson request)
     {
-        var command = CreateRegisterUserCommand(request);
+        var command = new RegisterUserCommand
+        {
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            Email = request.Email,
+            Contact = request.Contact,
+            Password = request.Password,
+            ConfirmPassword = request.ConfirmPassword
+        };
+
         var result = await useCase.Execute(command);
-        var response = CreateRegisteredUserResponse(result);
+        var response = new ResponseRegisteredUserJson
+        {
+            UserIdentifier = result.UserIdentifier,
+            FullName = result.FullName,
+            Email = result.Email
+        };
 
         return Created(string.Empty, response);
     }
@@ -49,8 +64,20 @@ public sealed class UserController : ControllerBase
     public async Task<ActionResult<ResponseUserProfileJson>> GetUserProfile(
         [FromServices] IGetUserProfileUseCase useCase)
     {
-        var result = await useCase.Execute(new GetUserProfileQuery());
-        var response = CreateUserProfileResponse(result);
+        var result = await useCase.Execute(new GetUserProfileQuery
+        {
+            UserIdentifier = GetAuthenticatedUserIdentifier()
+        });
+        var response = new ResponseUserProfileJson
+        {
+            FirstName = result.FirstName,
+            LastName = result.LastName,
+            FullName = result.FullName,
+            Email = result.Email,
+            Contact = result.Contact,
+            Role = result.Role,
+            IsEmailVerified = result.IsEmailVerified
+        };
 
         return Ok(response);
     }
@@ -69,7 +96,13 @@ public sealed class UserController : ControllerBase
         [FromServices] IUpdateUserUseCase useCase,
         [FromBody] RequestUpdateUserJson request)
     {
-        var command = CreateUpdateUserCommand(request);
+        var command = new UpdateUserCommand
+        {
+            UserIdentifier = GetAuthenticatedUserIdentifier(),
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            Contact = request.Contact
+        };
 
         await useCase.Execute(command);
 
@@ -90,7 +123,13 @@ public sealed class UserController : ControllerBase
         [FromServices] IChangePasswordUseCase useCase,
         [FromBody] RequestChangePasswordJson request)
     {
-        var command = CreateChangePasswordCommand(request);
+        var command = new ChangePasswordCommand
+        {
+            UserIdentifier = GetAuthenticatedUserIdentifier(),
+            CurrentPassword = request.CurrentPassword,
+            NewPassword = request.NewPassword,
+            ConfirmNewPassword = request.ConfirmNewPassword
+        };
 
         await useCase.Execute(command);
 
@@ -108,7 +147,10 @@ public sealed class UserController : ControllerBase
     public async Task<ActionResult> Delete(
         [FromServices] IDeleteUserUseCase useCase)
     {
-        await useCase.Execute(new DeleteUserCommand());
+        await useCase.Execute(new DeleteUserCommand
+        {
+            UserIdentifier = GetAuthenticatedUserIdentifier()
+        });
 
         return NoContent();
     }
@@ -116,85 +158,26 @@ public sealed class UserController : ControllerBase
     #region Helpers
 
     /// <summary>
-    /// Operação para criar o comando de registro do usuário.
+    /// Operação para obter o identificador público do usuário autenticado.
     /// </summary>
-    /// <param name="request">Dados da requisição de registro.</param>
-    /// <returns>Comando com os dados do registro.</returns>
-    private static RegisterUserCommand CreateRegisterUserCommand(RequestRegisterUserJson request)
+    /// <returns>Identificador público do usuário autenticado.</returns>
+    private Guid GetAuthenticatedUserIdentifier()
     {
-        return new RegisterUserCommand
+        var claimValues = new[]
         {
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            Email = request.Email,
-            Contact = request.Contact,
-            Password = request.Password,
-            ConfirmPassword = request.ConfirmPassword
+            User.FindFirstValue(ClaimTypes.NameIdentifier),
+            User.FindFirstValue("sub"),
+            User.FindFirstValue("user_identifier"),
+            User.FindFirstValue("userIdentifier")
         };
-    }
 
-    /// <summary>
-    /// Operação para criar a resposta do usuário registrado.
-    /// </summary>
-    /// <param name="result">Resultado da aplicação.</param>
-    /// <returns>Resposta HTTP do usuário registrado.</returns>
-    private static ResponseRegisteredUserJson CreateRegisteredUserResponse(RegisterUserResult result)
-    {
-        return new ResponseRegisteredUserJson
+        foreach (var claimValue in claimValues)
         {
-            UserIdentifier = result.UserIdentifier,
-            FullName = result.FullName,
-            Email = result.Email
-        };
-    }
+            if (Guid.TryParse(claimValue, out var userIdentifier))
+                return userIdentifier;
+        }
 
-    /// <summary>
-    /// Operação para criar o comando de atualização do usuário.
-    /// </summary>
-    /// <param name="request">Dados da requisição de atualização.</param>
-    /// <returns>Comando com os dados da atualização.</returns>
-    private static UpdateUserCommand CreateUpdateUserCommand(RequestUpdateUserJson request)
-    {
-        return new UpdateUserCommand
-        {
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            Contact = request.Contact
-        };
-    }
-
-    /// <summary>
-    /// Operação para criar o comando de alteração de senha.
-    /// </summary>
-    /// <param name="request">Dados da requisição de alteração de senha.</param>
-    /// <returns>Comando com os dados da alteração de senha.</returns>
-    private static ChangePasswordCommand CreateChangePasswordCommand(RequestChangePasswordJson request)
-    {
-        return new ChangePasswordCommand
-        {
-            CurrentPassword = request.CurrentPassword,
-            NewPassword = request.NewPassword,
-            ConfirmNewPassword = request.ConfirmNewPassword
-        };
-    }
-
-    /// <summary>
-    /// Operação para criar a resposta do perfil do usuário.
-    /// </summary>
-    /// <param name="result">Resultado da aplicação.</param>
-    /// <returns>Resposta HTTP do perfil do usuário.</returns>
-    private static ResponseUserProfileJson CreateUserProfileResponse(GetUserProfileResult result)
-    {
-        return new ResponseUserProfileJson
-        {
-            FirstName = result.FirstName,
-            LastName = result.LastName,
-            FullName = result.FullName,
-            Email = result.Email,
-            Contact = result.Contact,
-            Role = result.Role,
-            IsEmailVerified = result.IsEmailVerified
-        };
+        throw new UnauthorizedAccessException("O identificador do usuário autenticado não foi encontrado.");
     }
 
     #endregion
