@@ -2,23 +2,27 @@ services:
   # AuthCore API
   api:
     build:
-      context: ./backend
+      context: ./AuthCore
       dockerfile: AuthCore.Api/Dockerfile
     ports:
-      - "${API_PORT}:8080"
+      - "${API_PORT:-8080}:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Development}
+      - ASPNETCORE_HTTP_PORTS=8080
       # Connection strings
-      - DATABASE__POSTGRES__CONNECTIONSTRING=Host=postgres;Port=${POSTGRES_PORT};Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
-      - DATABASE__REDIS__CONNECTIONSTRING=redis:${REDIS_PORT},password=${REDIS_PASSWORD},abortConnect=false
-      - DATABASE__REDIS__KEYPREFIX=${DATABASE__REDIS__KEYPREFIX}
+      - ConnectionStrings__PostgreSql=Host=postgres;Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-auth_core};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-root};Pooling=true
+      - Redis__ConnectionString=redis:${REDIS_PORT:-6379},password=${REDIS_PASSWORD:-root},abortConnect=false
+      - Redis__KeyPrefix=${REDIS_KEY_PREFIX:-authcore:dev}
       # RabbitMQ
-      - RABBITMQ__HOST=rabbitmq
-      - RABBITMQ__PORT=5672
-      - RABBITMQ__USER=${RABBITMQ_USER}
-      - RABBITMQ__PASSWORD=${RABBITMQ_PASSWORD}
-      - RABBITMQ__EMAILQUEUE=${RABBITMQ__EMAILQUEUE}
-      - RABBITMQ__DEADLETTERQUEUE=${RABBITMQ__DEADLETTERQUEUE}
+      - Authentication__Jwt__Issuer=authcore-dev
+      - Authentication__Jwt__Audience=authcore-dev
+      - Authentication__Jwt__SigningKey=12345678901234567890123456789012
+      - Authentication__Jwt__AccessTokenLifetimeMinutes=15
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASSWORD:-root}
+      - RabbitMq__EmailVerificationQueue=${RABBITMQ_EMAIL_QUEUE:-authcore.email}
     volumes:
       # Chaves locais do desenvolvedor fora do repositório
       - ${HOME}/.authcore/key:/app/key:ro
@@ -36,17 +40,17 @@ services:
   # PostgreSQL
   postgres:
     image: postgres:17-alpine
-    command: postgres -p ${POSTGRES_PORT}
+    command: postgres -p ${POSTGRES_PORT:-5432}
     ports:
-      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+      - "${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-auth_core}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-root}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h localhost -p ${POSTGRES_PORT} -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -h localhost -p ${POSTGRES_PORT:-5432} -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-auth_core}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -59,12 +63,12 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "${REDIS_PORT}:${REDIS_PORT}"
-    command: redis-server --port ${REDIS_PORT} --requirepass ${REDIS_PASSWORD} --appendonly yes
+      - "${REDIS_PORT:-6379}:${REDIS_PORT:-6379}"
+    command: redis-server --port ${REDIS_PORT:-6379} --requirepass ${REDIS_PASSWORD:-root} --appendonly yes
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT}", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:-6379}", "-a", "${REDIS_PASSWORD:-root}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -77,11 +81,11 @@ services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-root}
     ports:
-      - "${RABBITMQ_PORT}:5672"
-      - "${RABBITMQ_MANAGEMENT_PORT}:15672"
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:

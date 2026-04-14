@@ -1,6 +1,7 @@
 using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Repositories;
 using AuthCore.Domain.Security.Cryptography;
+using AuthCore.Domain.Security.Tokens.Services;
 using AuthCore.Domain.Users.Repositories;
 using AuthCore.Infrastructure.Abstractions.Data;
 using AuthCore.Infrastructure.Configurations;
@@ -10,6 +11,7 @@ using AuthCore.Infrastructure.Persistences.Write.PostgreSQL.Connections;
 using AuthCore.Infrastructure.Persistences.Write.PostgreSQL.Repositories;
 using AuthCore.Infrastructure.Persistences.Write.PostgreSQL.UnitOfWork;
 using AuthCore.Infrastructure.Security.Cryptography;
+using AuthCore.Infrastructure.Security.Tokens;
 using FluentMigrator.Runner;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,6 +80,8 @@ public static class InfrastructureDependencyInjection
     private static void AddSecurity(IServiceCollection services)
     {
         services.AddScoped<IPasswordEncripter, BCryptNet>();
+        services.AddScoped<IAccessTokenGenerator, JwtAccessTokenGenerator>();
+        services.AddScoped<IRefreshTokenService, RefreshTokenService>();
     }
 
     /// <summary>
@@ -91,6 +95,7 @@ public static class InfrastructureDependencyInjection
         services.AddScoped<IUserRepository>(serviceProvider => serviceProvider.GetRequiredService<UserRepository>());
         services.AddScoped<IUserReadRepository>(serviceProvider => serviceProvider.GetRequiredService<UserReadRepository>());
         services.AddScoped<IPasswordRepository, PasswordRepository>();
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
     }
 
     /// <summary>

@@ -35,7 +35,7 @@ public sealed class GetUserProfileUseCase : IGetUserProfileUseCase
         var user = await _userReadRepository.GetByUserIdentifierAsync(query.UserIdentifier);
 
         if (user is null || !user.IsActive)
-            throw new DomainException("Usuário não encontrado.");
+            throw new NotFoundException("Usuário não encontrado.");
 
         return new GetUserProfileResult
         {

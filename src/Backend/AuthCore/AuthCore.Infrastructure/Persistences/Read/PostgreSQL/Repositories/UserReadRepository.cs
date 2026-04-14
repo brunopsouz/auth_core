@@ -27,6 +27,41 @@ public sealed class UserReadRepository : IUserReadRepository
     #endregion
 
     /// <summary>
+    /// Operação para obter um usuário pelo identificador interno.
+    /// </summary>
+    /// <param name="userId">Identificador interno do usuário.</param>
+    /// <returns>Usuário encontrado ou nulo.</returns>
+    public async Task<User?> GetByIdAsync(Guid userId)
+    {
+        const string sql = """
+            SELECT
+                "Id",
+                "CreatedAt",
+                "UpdateAt",
+                "IsActive",
+                "FirstName",
+                "LastName",
+                "FullName",
+                "Email",
+                "Contact",
+                "UserIdentifier",
+                "Role",
+                "EmailVerifiedAt"
+            FROM "Users"
+            WHERE "Id" = @UserId
+            LIMIT 1;
+            """;
+
+        var connection = await _databaseSession.GetOpenConnectionAsync();
+        await using var command = CreateCommand(connection, sql);
+        command.Parameters.AddWithValue("UserId", userId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+
+        return await ReadUserAsync(reader);
+    }
+
+    /// <summary>
     /// Operação para obter um usuário pelo identificador público.
     /// </summary>
     /// <param name="userIdentifier">Identificador público do usuário.</param>

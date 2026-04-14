@@ -1,25 +1,15 @@
-using AuthCore.Application.Users.UseCases.ChangePassword;
-using AuthCore.Application.Users.UseCases.DeleteUser;
-using AuthCore.Application.Users.UseCases.GetUserProfile;
-using AuthCore.Application.Users.UseCases.RegisterUser;
-using AuthCore.Application.Users.UseCases.UpdateUser;
+using AuthCore.Api;
+using AuthCore.Application;
 using AuthCore.Infrastructure;
 using AuthCore.Infrastructure.Persistences.Migrations;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
+builder.Services.AddApi(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddScoped<IRegisterUserUseCase, RegisterUserUseCase>();
-builder.Services.AddScoped<IGetUserProfileUseCase, GetUserProfileUseCase>();
-builder.Services.AddScoped<IUpdateUserUseCase, UpdateUserUseCase>();
-builder.Services.AddScoped<IChangePasswordUseCase, ChangePasswordUseCase>();
-builder.Services.AddScoped<IDeleteUserUseCase, DeleteUserUseCase>();
+builder.Services.AddApplication();
 
 var app = builder.Build();
 
@@ -32,8 +22,25 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.UseExceptionHandler();
+app.UseAuthentication();
 app.UseAuthorization();
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    AllowCachingResponses = false,
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
+    }
+});
 app.MapControllers();
 
 app.Run();
+
+/// <summary>
+/// Representa o ponto de entrada da API.
+/// </summary>
+public partial class Program
+{
+}

@@ -44,7 +44,7 @@ public sealed class UpdateUserUseCase : IUpdateUserUseCase
         var user = await _userReadRepository.GetByUserIdentifierAsync(command.UserIdentifier);
 
         if (user is null || !user.IsActive)
-            throw new DomainException("Usuário não encontrado.");
+            throw new NotFoundException("Usuário não encontrado.");
 
         user.UpdateProfile(command.FirstName, command.LastName, command.Contact);
 

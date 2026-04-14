@@ -1,0 +1,263 @@
+using AuthCore.Api;
+using AuthCore.Api.Contracts.Responses;
+using AuthCore.Api.Controllers;
+using AuthCore.Application;
+using AuthCore.Application.Users.UseCases.ChangePassword;
+using AuthCore.Application.Users.UseCases.DeleteUser;
+using AuthCore.Application.Users.UseCases.GetUserProfile;
+using AuthCore.Domain.Common.Enums;
+using AuthCore.Domain.Passports.Aggregates;
+using AuthCore.Domain.Passports.Repositories;
+using AuthCore.Domain.Security.Cryptography;
+using AuthCore.Domain.Security.Tokens.Services;
+using AuthCore.Domain.Users.Aggregates;
+using AuthCore.Domain.Users.Enums;
+using AuthCore.Domain.Users.Repositories;
+using AuthCore.Infrastructure;
+using AuthCore.IntegrationTests.Passports;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace AuthCore.IntegrationTests.Authentication;
+
+/// <summary>
+/// Verifica a revogação de sessões em eventos críticos e o uso do Bearer em fluxo protegido.
+/// </summary>
+public sealed class UserSecurityIntegrationTests : IClassFixture<PostgreSqlIntegrationFixture>
+{
+    private readonly PostgreSqlIntegrationFixture _fixture;
+
+    /// <summary>
+    /// Operação para criar instância da classe.
+    /// </summary>
+    /// <param name="fixture">Fixture compartilhada de integração com PostgreSQL.</param>
+    public UserSecurityIntegrationTests(PostgreSqlIntegrationFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    /// <summary>
+    /// Verifica se a alteração de senha revoga apenas refresh tokens ainda ativos do usuário.
+    /// </summary>
+    [Fact]
+    public async Task Execute_WhenPasswordChangesSuccessfully_ShouldRevokeActiveRefreshTokens()
+    {
+        if (!_fixture.IsAvailable)
+            return;
+
+        await using var provider = BuildApplicationServiceProvider(_fixture.DatabaseConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        var passwordRepository = scope.ServiceProvider.GetRequiredService<IPasswordRepository>();
+        var refreshTokenRepository = scope.ServiceProvider.GetRequiredService<IRefreshTokenRepository>();
+        var passwordEncripter = scope.ServiceProvider.GetRequiredService<IPasswordEncripter>();
+        var useCase = scope.ServiceProvider.GetRequiredService<IChangePasswordUseCase>();
+        var nowUtc = new DateTime(2026, 4, 14, 12, 0, 0, DateTimeKind.Utc);
+        var currentPassword = "CurrentPassword#2026";
+        var newPassword = "NewPassword#2026";
+        var user = CreateVerifiedUser($"change-password.{Guid.NewGuid():N}@authcore.dev");
+        var anotherUser = CreateVerifiedUser($"other-change-password.{Guid.NewGuid():N}@authcore.dev");
+        var password = Password.Create(user.Id, passwordEncripter.Encrypt(currentPassword), PasswordStatus.Active);
+        var activeToken = RefreshToken.IssueInitial(user.Id, $"active-hash-{Guid.NewGuid():N}", nowUtc.AddDays(7));
+        var consumedToken = RefreshToken.IssueInitial(user.Id, $"consumed-hash-{Guid.NewGuid():N}", nowUtc.AddDays(7))
+            .Consume(Guid.NewGuid(), nowUtc.AddMinutes(-10));
+        var otherUserToken = RefreshToken.IssueInitial(anotherUser.Id, $"other-user-hash-{Guid.NewGuid():N}", nowUtc.AddDays(7));
+
+        await userRepository.AddAsync(user);
+        await userRepository.AddAsync(anotherUser);
+        await passwordRepository.AddAsync(password);
+        await refreshTokenRepository.AddAsync(activeToken);
+        await refreshTokenRepository.AddAsync(consumedToken);
+        await refreshTokenRepository.AddAsync(otherUserToken);
+
+        await useCase.Execute(new ChangePasswordCommand
+        {
+            UserIdentifier = user.UserIdentifier,
+            CurrentPassword = currentPassword,
+            NewPassword = newPassword,
+            ConfirmNewPassword = newPassword
+        });
+
+        var updatedPassword = await passwordRepository.GetByUserIdAsync(user.Id);
+        var persistedActiveToken = await refreshTokenRepository.GetByHashAsync(activeToken.TokenHash);
+        var persistedConsumedToken = await refreshTokenRepository.GetByHashAsync(consumedToken.TokenHash);
+        var persistedOtherUserToken = await refreshTokenRepository.GetByHashAsync(otherUserToken.TokenHash);
+
+        Assert.NotNull(updatedPassword);
+        Assert.True(passwordEncripter.IsValid(newPassword, updatedPassword!.Value));
+        Assert.Equal(PasswordStatus.Active, updatedPassword.Status);
+        Assert.NotNull(persistedActiveToken);
+        Assert.Equal("password-changed", persistedActiveToken!.RevocationReason);
+        Assert.NotNull(persistedActiveToken.RevokedAtUtc);
+        Assert.NotNull(persistedConsumedToken);
+        Assert.Null(persistedConsumedToken!.RevokedAtUtc);
+        Assert.NotNull(persistedOtherUserToken);
+        Assert.Null(persistedOtherUserToken!.RevokedAtUtc);
+    }
+
+    /// <summary>
+    /// Verifica se a exclusão desativa o usuário e revoga refresh tokens ainda ativos.
+    /// </summary>
+    [Fact]
+    public async Task Execute_WhenUserIsDeleted_ShouldDeactivatePasswordAndRevokeActiveRefreshTokens()
+    {
+        if (!_fixture.IsAvailable)
+            return;
+
+        await using var provider = BuildApplicationServiceProvider(_fixture.DatabaseConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        var userReadRepository = scope.ServiceProvider.GetRequiredService<IUserReadRepository>();
+        var passwordRepository = scope.ServiceProvider.GetRequiredService<IPasswordRepository>();
+        var refreshTokenRepository = scope.ServiceProvider.GetRequiredService<IRefreshTokenRepository>();
+        var passwordEncripter = scope.ServiceProvider.GetRequiredService<IPasswordEncripter>();
+        var useCase = scope.ServiceProvider.GetRequiredService<IDeleteUserUseCase>();
+        var nowUtc = new DateTime(2026, 4, 14, 15, 0, 0, DateTimeKind.Utc);
+        var user = CreateVerifiedUser($"delete-user.{Guid.NewGuid():N}@authcore.dev");
+        var password = Password.Create(user.Id, passwordEncripter.Encrypt("CurrentPassword#2026"), PasswordStatus.Active);
+        var activeToken = RefreshToken.IssueInitial(user.Id, $"delete-active-hash-{Guid.NewGuid():N}", nowUtc.AddDays(7));
+        var expiredToken = RefreshToken.IssueInitial(user.Id, $"delete-expired-hash-{Guid.NewGuid():N}", nowUtc.AddMinutes(-1));
+
+        await userRepository.AddAsync(user);
+        await passwordRepository.AddAsync(password);
+        await refreshTokenRepository.AddAsync(activeToken);
+        await refreshTokenRepository.AddAsync(expiredToken);
+
+        await useCase.Execute(new DeleteUserCommand
+        {
+            UserIdentifier = user.UserIdentifier
+        });
+
+        var persistedUser = await userReadRepository.GetByUserIdentifierAsync(user.UserIdentifier);
+        var updatedPassword = await passwordRepository.GetByUserIdAsync(user.Id);
+        var persistedActiveToken = await refreshTokenRepository.GetByHashAsync(activeToken.TokenHash);
+        var persistedExpiredToken = await refreshTokenRepository.GetByHashAsync(expiredToken.TokenHash);
+
+        Assert.NotNull(persistedUser);
+        Assert.False(persistedUser!.IsActive);
+        Assert.NotNull(updatedPassword);
+        Assert.Equal(PasswordStatus.Deactivated, updatedPassword!.Status);
+        Assert.NotNull(persistedActiveToken);
+        Assert.Equal("user-deactivated", persistedActiveToken!.RevocationReason);
+        Assert.NotNull(persistedActiveToken.RevokedAtUtc);
+        Assert.NotNull(persistedExpiredToken);
+        Assert.Null(persistedExpiredToken!.RevokedAtUtc);
+    }
+
+    /// <summary>
+    /// Verifica se um Bearer emitido pela infraestrutura alcança um fluxo protegido do controller.
+    /// </summary>
+    [Fact]
+    public async Task GetUserProfile_WhenBearerTokenIsValid_ShouldReturnProtectedProfileResponse()
+    {
+        if (!_fixture.IsAvailable)
+            return;
+
+        await using var provider = BuildApplicationServiceProvider(_fixture.DatabaseConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        var accessTokenGenerator = scope.ServiceProvider.GetRequiredService<IAccessTokenGenerator>();
+        var authenticationService = scope.ServiceProvider.GetRequiredService<IAuthenticationService>();
+        var useCase = scope.ServiceProvider.GetRequiredService<IGetUserProfileUseCase>();
+        var user = CreateVerifiedUser($"bearer-profile.{Guid.NewGuid():N}@authcore.dev");
+        var accessToken = accessTokenGenerator.Generate(user);
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = scope.ServiceProvider
+        };
+        var controller = new UserController
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = httpContext
+            }
+        };
+
+        await userRepository.AddAsync(user);
+
+        httpContext.Request.Headers.Authorization = $"Bearer {accessToken.Token}";
+
+        var authenticateResult = await authenticationService.AuthenticateAsync(
+            httpContext,
+            JwtBearerDefaults.AuthenticationScheme);
+
+        Assert.True(authenticateResult.Succeeded);
+        Assert.NotNull(authenticateResult.Principal);
+
+        httpContext.User = authenticateResult.Principal!;
+
+        var result = await controller.GetUserProfile(useCase);
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<ResponseUserProfileJson>(okResult.Value);
+
+        Assert.Equal(user.Email.Value, response.Email);
+        Assert.Equal(user.FullName, response.FullName);
+        Assert.Equal(user.Role.ToString(), response.Role);
+        Assert.True(response.IsEmailVerified);
+    }
+
+    #region Helpers
+
+    /// <summary>
+    /// Operação para criar um provider completo de serviços da API para os testes.
+    /// </summary>
+    /// <param name="connectionString">String de conexão do banco do teste.</param>
+    /// <returns>Provider configurado com API, Application e Infrastructure.</returns>
+    private static ServiceProvider BuildApplicationServiceProvider(string connectionString)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:PostgreSql"] = connectionString,
+                ["Database:Migrations:AutoMigrateOnStartup"] = "false",
+                ["Database:Migrations:EnsureDatabaseCreated"] = "false",
+                ["Database:Migrations:AdminDatabase"] = "postgres",
+                ["Authentication:Jwt:Issuer"] = "authcore-tests",
+                ["Authentication:Jwt:Audience"] = "authcore-tests",
+                ["Authentication:Jwt:SigningKey"] = "12345678901234567890123456789012",
+                ["Authentication:Jwt:AccessTokenLifetimeMinutes"] = "15",
+                ["Authentication:Jwt:RefreshTokenLifetimeDays"] = "7",
+                ["Authentication:Jwt:ClockSkewSeconds"] = "60",
+                ["Redis:ConnectionString"] = "localhost:6379",
+                ["Redis:KeyPrefix"] = "authcore-tests",
+                ["RabbitMq:Host"] = "localhost",
+                ["RabbitMq:Port"] = "5672",
+                ["RabbitMq:Username"] = "guest",
+                ["RabbitMq:Password"] = "guest",
+                ["RabbitMq:EmailVerificationQueue"] = "auth.email-verification"
+            })
+            .Build();
+
+        return new ServiceCollection()
+            .AddLogging()
+            .AddApi(configuration)
+            .AddInfrastructure(configuration)
+            .AddApplication()
+            .BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// Operação para criar um usuário verificado apto a autenticar.
+    /// </summary>
+    /// <param name="email">E-mail do usuário.</param>
+    /// <returns>Usuário verificado.</returns>
+    private static User CreateVerifiedUser(string email)
+    {
+        var user = User.Register(
+            firstName: "Auth",
+            lastName: "Core",
+            email: email,
+            contact: "11999999999",
+            role: Role.User);
+
+        user.VerifyEmail(new DateTime(2026, 4, 14, 9, 0, 0, DateTimeKind.Utc));
+
+        return user;
+    }
+
+    #endregion
+}

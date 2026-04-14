@@ -35,4 +35,16 @@ public sealed class JwtOptions
     /// </summary>
     [Range(1, 1440)]
     public int AccessTokenLifetimeMinutes { get; init; } = 15;
+
+    /// <summary>
+    /// Tempo de vida do refresh token em dias.
+    /// </summary>
+    [Range(1, 365)]
+    public int RefreshTokenLifetimeDays { get; init; } = 7;
+
+    /// <summary>
+    /// Tolerância de relógio aplicada na validação do JWT em segundos.
+    /// </summary>
+    [Range(0, 300)]
+    public int ClockSkewSeconds { get; init; } = 60;
 }

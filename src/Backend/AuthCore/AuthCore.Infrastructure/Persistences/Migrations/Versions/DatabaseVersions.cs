@@ -24,4 +24,9 @@ public static class DatabaseVersions
     /// Versão de criação da tabela de tokens de verificação de e-mail.
     /// </summary>
     public const long TABLE_EMAIL_VERIFICATION_TOKENS = 4;
+
+    /// <summary>
+    /// Versão de criação da tabela de refresh tokens.
+    /// </summary>
+    public const long TABLE_REFRESH_TOKENS = 5;
 }

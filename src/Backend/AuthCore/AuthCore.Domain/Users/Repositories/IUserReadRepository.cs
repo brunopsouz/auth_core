@@ -8,6 +8,13 @@ namespace AuthCore.Domain.Users.Repositories;
 public interface IUserReadRepository
 {
     /// <summary>
+    /// Operação para obter um usuário pelo identificador interno.
+    /// </summary>
+    /// <param name="userId">Identificador interno do usuário.</param>
+    /// <returns>Usuário encontrado ou nulo.</returns>
+    Task<User?> GetByIdAsync(Guid userId);
+
+    /// <summary>
     /// Operação para obter um usuário pelo identificador público.
     /// </summary>
     /// <param name="userIdentifier">Identificador público do usuário.</param>

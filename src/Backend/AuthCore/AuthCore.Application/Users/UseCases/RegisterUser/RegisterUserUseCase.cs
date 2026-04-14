@@ -61,7 +61,7 @@ public sealed class RegisterUserUseCase : IRegisterUserUseCase
         var existingUser = await _userReadRepository.GetByEmailAsync(command.Email);
 
         if (existingUser is not null)
-            throw new DomainException("Já existe um usuário cadastrado com o e-mail informado.");
+            throw new ConflictException("Já existe um usuário cadastrado com o e-mail informado.");
 
         var user = User.Register(
             command.FirstName,

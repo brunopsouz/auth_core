@@ -10,7 +10,10 @@ namespace AuthCore.Application.Users.UseCases.DeleteUser;
 /// </summary>
 public sealed class DeleteUserUseCase : IDeleteUserUseCase
 {
+    private const string USER_DEACTIVATED_REASON = "user-deactivated";
+
     private readonly IPasswordRepository _passwordRepository;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IUserReadRepository _userReadRepository;
     private readonly IUserRepository _userRepository;
@@ -23,16 +26,19 @@ public sealed class DeleteUserUseCase : IDeleteUserUseCase
     /// <param name="userReadRepository">Repositório de leitura de usuário.</param>
     /// <param name="userRepository">Repositório de escrita de usuário.</param>
     /// <param name="passwordRepository">Repositório de senha.</param>
+    /// <param name="refreshTokenRepository">Repositório de refresh token.</param>
     /// <param name="unitOfWork">Unidade de trabalho transacional.</param>
     public DeleteUserUseCase(
         IUserReadRepository userReadRepository,
         IUserRepository userRepository,
         IPasswordRepository passwordRepository,
+        IRefreshTokenRepository refreshTokenRepository,
         IUnitOfWork unitOfWork)
     {
         _userReadRepository = userReadRepository;
         _userRepository = userRepository;
         _passwordRepository = passwordRepository;
+        _refreshTokenRepository = refreshTokenRepository;
         _unitOfWork = unitOfWork;
     }
 
@@ -49,7 +55,7 @@ public sealed class DeleteUserUseCase : IDeleteUserUseCase
         var user = await _userReadRepository.GetByUserIdentifierAsync(command.UserIdentifier);
 
         if (user is null || !user.IsActive)
-            throw new DomainException("Usuário não encontrado.");
+            throw new NotFoundException("Usuário não encontrado.");
 
         var password = await _passwordRepository.GetByUserIdAsync(user.Id);
 
@@ -64,6 +70,7 @@ public sealed class DeleteUserUseCase : IDeleteUserUseCase
             if (password is not null)
                 await _passwordRepository.UpdateAsync(password.MarkAsDeactivated());
 
+            await _refreshTokenRepository.RevokeActiveByUserIdAsync(user.Id, DateTime.UtcNow, USER_DEACTIVATED_REASON);
             await _unitOfWork.CommitAsync();
         }
         catch
