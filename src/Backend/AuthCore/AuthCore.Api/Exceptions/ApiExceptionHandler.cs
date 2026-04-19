@@ -69,6 +69,7 @@ public sealed class ApiExceptionHandler : IExceptionHandler
         return exception switch
         {
             UnauthorizedAccessException unauthorizedAccessException => (StatusCodes.Status401Unauthorized, GetErrors(unauthorizedAccessException)),
+            ForbiddenException forbiddenException => (StatusCodes.Status403Forbidden, GetErrors(forbiddenException)),
             NotFoundException notFoundException => (StatusCodes.Status404NotFound, GetErrors(notFoundException)),
             ConflictException conflictException => (StatusCodes.Status409Conflict, GetErrors(conflictException)),
             DomainException domainException => (StatusCodes.Status400BadRequest, GetErrors(domainException)),

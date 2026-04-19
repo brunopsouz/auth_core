@@ -1,11 +1,13 @@
 using AuthCore.Application.Authentication.Models;
 using AuthCore.Domain.Common.Enums;
+using AuthCore.Domain.Common.Exceptions;
 using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Aggregates;
 using AuthCore.Domain.Passports.Repositories;
 using AuthCore.Domain.Security.Cryptography;
 using AuthCore.Domain.Security.Tokens.Services;
 using AuthCore.Domain.Users.Aggregates;
+using AuthCore.Domain.Users.Enums;
 using AuthCore.Domain.Users.Repositories;
 
 namespace AuthCore.Application.Authentication.UseCases.Login;
@@ -81,8 +83,11 @@ public sealed class LoginUseCase : ILoginUseCase
         if (password is null)
             throw CreateInvalidCredentialsException();
 
-        if (!user.CanSignIn || !CanAuthenticate(password))
+        if (!CanAuthenticate(password))
             throw CreateInvalidCredentialsException();
+
+        if (!user.CanSignIn)
+            throw CreateCannotSignInException(user);
 
         if (!_passwordEncripter.IsValid(command.Password, password.Value))
         {
@@ -210,6 +215,21 @@ public sealed class LoginUseCase : ILoginUseCase
     private static UnauthorizedAccessException CreateInvalidCredentialsException()
     {
         return new UnauthorizedAccessException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    /// <summary>
+    /// Operação para criar a falha de autenticação por estado do usuário.
+    /// </summary>
+    /// <param name="user">Usuário alvo da autenticação.</param>
+    /// <returns>Exceção de acesso proibido.</returns>
+    private static ForbiddenException CreateCannotSignInException(User user)
+    {
+        return user.Status switch
+        {
+            UserStatus.PendingEmailVerification => new ForbiddenException("O usuário precisa verificar o e-mail antes de autenticar."),
+            UserStatus.Blocked => new ForbiddenException("O usuário está bloqueado para autenticação."),
+            _ => new ForbiddenException("O usuário não pode autenticar no momento.")
+        };
     }
 
     #endregion

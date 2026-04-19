@@ -2,6 +2,7 @@ using AuthCore.Domain.Common.Enums;
 using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Aggregates;
 using AuthCore.Domain.Passports.Repositories;
+using AuthCore.Domain.Passports.Services;
 using AuthCore.Domain.Security.Cryptography;
 using AuthCore.Domain.Security.Tokens.Models;
 using AuthCore.Domain.Security.Tokens.Services;
@@ -223,6 +224,80 @@ internal sealed class FakeRefreshTokenService : IRefreshTokenService
     }
 }
 
+internal sealed class FakeSessionStore : ISessionStore
+{
+    private readonly Dictionary<string, Session> _sessionsById = [];
+
+    public List<Session> SavedSessions { get; } = [];
+
+    public List<string> RevokedSessionIds { get; } = [];
+
+    public List<Guid> RevokedAllUserIds { get; } = [];
+
+    public Task SaveAsync(Session session)
+    {
+        SavedSessions.Add(session);
+        _sessionsById[session.SessionId] = session;
+        return Task.CompletedTask;
+    }
+
+    public Task<Session?> GetByIdAsync(string sessionId)
+    {
+        _sessionsById.TryGetValue(sessionId.Trim(), out var session);
+        return Task.FromResult(session);
+    }
+
+    public Task<IReadOnlyCollection<Session>> ListByUserIdAsync(Guid userId)
+    {
+        IReadOnlyCollection<Session> sessions = _sessionsById.Values
+            .Where(session => session.UserId == userId)
+            .ToArray();
+
+        return Task.FromResult(sessions);
+    }
+
+    public Task RevokeAsync(string sessionId)
+    {
+        RevokedSessionIds.Add(sessionId);
+        _sessionsById.Remove(sessionId);
+        return Task.CompletedTask;
+    }
+
+    public Task RevokeAllAsync(Guid userId)
+    {
+        RevokedAllUserIds.Add(userId);
+
+        foreach (var session in _sessionsById.Values.Where(session => session.UserId == userId).ToArray())
+            _sessionsById.Remove(session.SessionId);
+
+        return Task.CompletedTask;
+    }
+
+    public void Store(Session session)
+    {
+        _sessionsById[session.SessionId] = session;
+    }
+}
+
+internal sealed class FakeSessionService : ISessionService
+{
+    public bool UseSlidingExpiration { get; set; } = true;
+
+    public DateTime ExpiresAtUtc { get; set; } = new DateTime(2026, 4, 20, 12, 0, 0, DateTimeKind.Utc);
+
+    public DateTime SlidingExpiresAtUtc { get; set; } = new DateTime(2026, 4, 20, 13, 0, 0, DateTimeKind.Utc);
+
+    public DateTime GetExpiresAtUtc()
+    {
+        return ExpiresAtUtc;
+    }
+
+    public DateTime GetSlidingExpiresAtUtc(DateTime referenceAtUtc)
+    {
+        return SlidingExpiresAtUtc;
+    }
+}
+
 internal sealed class SpyUnitOfWork : IUnitOfWork
 {
     public int BegunTransactions { get; private set; }
@@ -267,6 +342,7 @@ internal static class AuthenticationFixtures
             $"bruno.{Guid.NewGuid():N}@authcore.dev",
             "11999999999",
             Role.User,
+            UserStatus.Active,
             Guid.NewGuid(),
             now.AddDays(-10));
     }
@@ -286,6 +362,7 @@ internal static class AuthenticationFixtures
             $"bruno.{Guid.NewGuid():N}@authcore.dev",
             "11999999999",
             Role.User,
+            UserStatus.PendingEmailVerification,
             Guid.NewGuid(),
             null);
     }

@@ -1,18 +1,24 @@
+using System.Security.Claims;
 using AuthCore.Api;
+using AuthCore.Api.Authentication;
 using AuthCore.Api.Contracts.Requests;
 using AuthCore.Api.Contracts.Responses;
 using AuthCore.Api.Controllers;
 using AuthCore.Application.Authentication.Models;
 using AuthCore.Application.Authentication.UseCases.Login;
-using AuthCore.Application.Authentication.UseCases.LogoutSession;
+using AuthCore.Application.Authentication.UseCases.LoginSession;
+using AuthCore.Application.Authentication.UseCases.LogoutCurrentSession;
 using AuthCore.Application.Authentication.UseCases.RefreshSession;
 using AuthCore.Application.Common.Models.Responses;
 using AuthCore.Domain.Common.Exceptions;
+using AuthCore.Infrastructure.Configurations;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace AuthCore.IntegrationTests.Authentication;
 
@@ -22,7 +28,65 @@ namespace AuthCore.IntegrationTests.Authentication;
 public sealed class AuthControllerIntegrationTests
 {
     [Fact]
-    public async Task Login_WhenUseCaseSucceeds_ShouldReturnOkWithAuthenticatedSessionResponse()
+    public async Task Login_WhenSessionUseCaseSucceeds_ShouldReturnOkWithCookieAndAuthenticatedUserResponse()
+    {
+        var userId = Guid.NewGuid();
+        var useCase = new SpyLoginSessionUseCase
+        {
+            Result = new AuthenticatedUserSessionResult
+            {
+                SessionId = "session-123",
+                UserIdentifier = userId,
+                Email = "bruno@authcore.dev",
+                ExpiresAtUtc = new DateTime(2026, 4, 20, 15, 0, 0, DateTimeKind.Utc)
+            }
+        };
+        var authCookieOptions = Options.Create(new AuthCookieOptions
+        {
+            SessionCookieName = "sid",
+            Secure = false
+        });
+        var controller = CreateController();
+
+        var result = await controller.Login(useCase, authCookieOptions, new RequestSessionLoginJson
+        {
+            Email = "bruno@authcore.dev",
+            Password = "ValidPassword#2026"
+        });
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<ResponseAuthenticatedUserJson>(okResult.Value);
+        var setCookieHeader = controller.Response.Headers.SetCookie.ToString();
+
+        Assert.Equal("bruno@authcore.dev", useCase.LastCommand!.Email);
+        Assert.Equal("ValidPassword#2026", useCase.LastCommand.Password);
+        Assert.Equal(userId, response.UserId);
+        Assert.Equal(useCase.Result.Email, response.Email);
+        Assert.Contains("sid=session-123", setCookieHeader, StringComparison.Ordinal);
+        Assert.Contains("httponly", setCookieHeader, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Login_WhenUseCaseThrowsForbiddenException_ShouldReturnForbiddenResponseErrorJson()
+    {
+        var useCase = new ThrowingLoginSessionUseCase(new ForbiddenException("O usuário precisa verificar o e-mail antes de autenticar."));
+        var controller = CreateController();
+
+        var result = await controller.Login(useCase, Options.Create(new AuthCookieOptions()), new RequestSessionLoginJson
+        {
+            Email = "pending@authcore.dev",
+            Password = "ValidPassword#2026"
+        });
+
+        var forbiddenResult = Assert.IsType<ObjectResult>(result.Result);
+        var response = Assert.IsType<ResponseErrorJson>(forbiddenResult.Value);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, forbiddenResult.StatusCode);
+        Assert.Equal(["O usuário precisa verificar o e-mail antes de autenticar."], response.Errors);
+    }
+
+    [Fact]
+    public async Task Token_WhenUseCaseSucceeds_ShouldReturnOkWithAuthenticatedSessionResponse()
     {
         var useCase = new SpyLoginUseCase
         {
@@ -34,9 +98,9 @@ public sealed class AuthControllerIntegrationTests
                 RefreshTokenExpiresAtUtc = new DateTime(2026, 4, 20, 15, 0, 0, DateTimeKind.Utc)
             }
         };
-        var controller = new AuthController();
+        var controller = CreateController();
 
-        var result = await controller.Login(useCase, new RequestLoginJson
+        var result = await controller.Token(useCase, new RequestLoginJson
         {
             Email = "bruno@authcore.dev",
             Password = "ValidPassword#2026"
@@ -52,49 +116,67 @@ public sealed class AuthControllerIntegrationTests
     }
 
     [Fact]
-    public async Task Refresh_WhenUseCaseThrowsUnauthorizedAccessException_ShouldReturnUnauthorizedResponseErrorJson()
+    public void Me_WhenUserClaimsArePresent_ShouldReturnOkWithAuthenticatedUserResponse()
     {
-        var useCase = new ThrowingRefreshSessionUseCase(new UnauthorizedAccessException("A sessão informada é inválida ou expirou."));
-        var controller = new AuthController();
-
-        var result = await controller.Refresh(useCase, new RequestRefreshSessionJson
+        var userId = Guid.NewGuid();
+        var controller = CreateController(new[]
         {
-            RefreshToken = "expired-refresh-token"
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+            new Claim(ClaimTypes.Email, "bruno@authcore.dev"),
+            new Claim(SessionAuthenticationDefaults.SessionIdClaimType, "session-123"),
+            new Claim(SessionAuthenticationDefaults.UserStatusClaimType, "Active"),
+            new Claim(SessionAuthenticationDefaults.UserIsActiveClaimType, bool.TrueString)
         });
 
-        var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result.Result);
-        var response = Assert.IsType<ResponseErrorJson>(unauthorizedResult.Value);
+        var result = controller.Me();
 
-        Assert.Equal(["A sessão informada é inválida ou expirou."], response.Errors);
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<ResponseAuthenticatedUserJson>(okResult.Value);
+
+        Assert.Equal(userId, response.UserId);
+        Assert.Equal("bruno@authcore.dev", response.Email);
     }
 
     [Fact]
-    public async Task Logout_WhenUseCaseSucceeds_ShouldReturnNoContent()
+    public void Me_WhenSessionUserIsPending_ShouldReturnForbiddenResponseErrorJson()
     {
-        var useCase = new SpyLogoutSessionUseCase();
-        var controller = new AuthController();
-
-        var result = await controller.Logout(useCase, new RequestLogoutSessionJson
+        var controller = CreateController(new[]
         {
-            RefreshToken = "refresh-token"
+            new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),
+            new Claim(ClaimTypes.Email, "pending@authcore.dev"),
+            new Claim(SessionAuthenticationDefaults.SessionIdClaimType, "session-123"),
+            new Claim(SessionAuthenticationDefaults.UserStatusClaimType, "PendingEmailVerification"),
+            new Claim(SessionAuthenticationDefaults.UserIsActiveClaimType, bool.TrueString)
         });
+
+        var result = controller.Me();
+
+        var forbiddenResult = Assert.IsType<ObjectResult>(result.Result);
+        var response = Assert.IsType<ResponseErrorJson>(forbiddenResult.Value);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, forbiddenResult.StatusCode);
+        Assert.Equal(["O usuário precisa verificar o e-mail antes de autenticar."], response.Errors);
+    }
+
+    [Fact]
+    public async Task Logout_WhenUseCaseSucceeds_ShouldReturnNoContentAndDeleteCookie()
+    {
+        var useCase = new SpyLogoutCurrentSessionUseCase();
+        var authCookieOptions = Options.Create(new AuthCookieOptions
+        {
+            SessionCookieName = "sid",
+            Secure = false
+        });
+        var controller = CreateController(new[]
+        {
+            new Claim(SessionAuthenticationDefaults.SessionIdClaimType, "session-123")
+        });
+
+        var result = await controller.Logout(useCase, authCookieOptions);
 
         Assert.IsType<NoContentResult>(result);
-        Assert.Equal("refresh-token", useCase.LastCommand!.RefreshToken);
-    }
-
-    [Fact]
-    public async Task Logout_WhenUseCaseThrowsArgumentException_ShouldReturnBadRequestResponseErrorJson()
-    {
-        var useCase = new ThrowingLogoutSessionUseCase(new ArgumentException("O refresh token é obrigatório.", "refreshToken"));
-        var controller = new AuthController();
-
-        var result = await controller.Logout(useCase, new RequestLogoutSessionJson());
-
-        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
-        var response = Assert.IsType<ResponseErrorJson>(badRequestResult.Value);
-
-        Assert.Equal(["O refresh token é obrigatório. (Parameter 'refreshToken')"], response.Errors);
+        Assert.Equal("session-123", useCase.LastCommand!.SessionId);
+        Assert.Contains("sid=", controller.Response.Headers.SetCookie.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,7 +191,9 @@ public sealed class AuthControllerIntegrationTests
             ["Authentication:Jwt:SigningKey"] = "12345678901234567890123456789012",
             ["Authentication:Jwt:AccessTokenLifetimeMinutes"] = "15",
             ["Authentication:Jwt:RefreshTokenLifetimeDays"] = "7",
-            ["Authentication:Jwt:ClockSkewSeconds"] = "60"
+            ["Authentication:Jwt:ClockSkewSeconds"] = "60",
+            ["Auth:Cookie:SessionCookieName"] = "sid",
+            ["Auth:Cookie:Secure"] = "false"
         });
 
         builder.Services.AddControllers()
@@ -125,8 +209,60 @@ public sealed class AuthControllerIntegrationTests
             .ToList();
 
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/login");
+        Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/token");
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/refresh");
+        Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/me");
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/logout");
+    }
+
+    #region Helpers
+
+    private static AuthController CreateController(IEnumerable<Claim>? claims = null)
+    {
+        var httpContext = new DefaultHttpContext();
+
+        if (claims is not null)
+        {
+            httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+                claims,
+                SessionAuthenticationDefaults.AuthenticationScheme));
+        }
+
+        return new AuthController
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = httpContext
+            }
+        };
+    }
+
+    private sealed class SpyLoginSessionUseCase : ILoginSessionUseCase
+    {
+        public LoginSessionCommand? LastCommand { get; private set; }
+
+        public AuthenticatedUserSessionResult Result { get; set; } = new();
+
+        public Task<AuthenticatedUserSessionResult> Execute(LoginSessionCommand command)
+        {
+            LastCommand = command;
+            return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class ThrowingLoginSessionUseCase : ILoginSessionUseCase
+    {
+        private readonly Exception _exception;
+
+        public ThrowingLoginSessionUseCase(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public Task<AuthenticatedUserSessionResult> Execute(LoginSessionCommand command)
+        {
+            return Task.FromException<AuthenticatedUserSessionResult>(_exception);
+        }
     }
 
     private sealed class SpyLoginUseCase : ILoginUseCase
@@ -142,44 +278,16 @@ public sealed class AuthControllerIntegrationTests
         }
     }
 
-    private sealed class ThrowingRefreshSessionUseCase : IRefreshSessionUseCase
+    private sealed class SpyLogoutCurrentSessionUseCase : ILogoutCurrentSessionUseCase
     {
-        private readonly Exception _exception;
+        public LogoutCurrentSessionCommand? LastCommand { get; private set; }
 
-        public ThrowingRefreshSessionUseCase(Exception exception)
-        {
-            _exception = exception;
-        }
-
-        public Task<AuthenticatedSessionResult> Execute(RefreshSessionCommand command)
-        {
-            return Task.FromException<AuthenticatedSessionResult>(_exception);
-        }
-    }
-
-    private sealed class SpyLogoutSessionUseCase : ILogoutSessionUseCase
-    {
-        public LogoutSessionCommand? LastCommand { get; private set; }
-
-        public Task Execute(LogoutSessionCommand command)
+        public Task Execute(LogoutCurrentSessionCommand command)
         {
             LastCommand = command;
             return Task.CompletedTask;
         }
     }
 
-    private sealed class ThrowingLogoutSessionUseCase : ILogoutSessionUseCase
-    {
-        private readonly Exception _exception;
-
-        public ThrowingLogoutSessionUseCase(Exception exception)
-        {
-            _exception = exception;
-        }
-
-        public Task Execute(LogoutSessionCommand command)
-        {
-            return Task.FromException(_exception);
-        }
-    }
+    #endregion
 }

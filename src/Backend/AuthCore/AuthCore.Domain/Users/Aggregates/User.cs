@@ -46,6 +46,11 @@ public sealed class User : AggregateRoot
     public Role Role { get; private set; }
 
     /// <summary>
+    /// Status funcional do usuário.
+    /// </summary>
+    public UserStatus Status { get; private set; }
+
+    /// <summary>
     /// Data da verificação do e-mail.
     /// </summary>
     public DateTime? EmailVerifiedAt { get; private set; }
@@ -58,7 +63,7 @@ public sealed class User : AggregateRoot
     /// <summary>
     /// Indica se o usuário pode autenticar.
     /// </summary>
-    public bool CanSignIn => IsActive && IsEmailVerified;
+    public bool CanSignIn => IsActive && Status == UserStatus.Active && IsEmailVerified;
 
     #region Constructors
 
@@ -87,6 +92,7 @@ public sealed class User : AggregateRoot
         Email email,
         string contact,
         Role role,
+        UserStatus status,
         Guid userIdentifier,
         DateTime? emailVerifiedAt)
     {
@@ -96,6 +102,7 @@ public sealed class User : AggregateRoot
         Email = email;
         Contact = contact.Trim();
         Role = role;
+        Status = status;
         UserIdentifier = userIdentifier;
         EmailVerifiedAt = emailVerifiedAt;
 
@@ -128,6 +135,7 @@ public sealed class User : AggregateRoot
         Email email,
         string contact,
         Role role,
+        UserStatus status,
         Guid userIdentifier,
         DateTime? emailVerifiedAt)
         : base(id, createdAt, updateAt, isActive)
@@ -138,6 +146,7 @@ public sealed class User : AggregateRoot
         Email = email;
         Contact = contact.Trim();
         Role = role;
+        Status = status;
         UserIdentifier = userIdentifier;
         EmailVerifiedAt = emailVerifiedAt;
 
@@ -174,6 +183,7 @@ public sealed class User : AggregateRoot
             Email.Create(email),
             contact,
             role,
+            UserStatus.PendingEmailVerification,
             Guid.NewGuid(),
             emailVerifiedAt: null);
     }
@@ -203,6 +213,7 @@ public sealed class User : AggregateRoot
             Email.Create(email),
             contact,
             role,
+            UserStatus.PendingEmailVerification,
             Guid.NewGuid(),
             emailVerifiedAt: null);
     }
@@ -236,6 +247,7 @@ public sealed class User : AggregateRoot
             Email.Create(email),
             contact,
             role,
+            emailVerifiedAt.HasValue ? UserStatus.Active : UserStatus.PendingEmailVerification,
             userIdentifier ?? Guid.NewGuid(),
             emailVerifiedAt);
     }
@@ -267,6 +279,7 @@ public sealed class User : AggregateRoot
         string email,
         string contact,
         Role role,
+        UserStatus status,
         Guid userIdentifier,
         DateTime? emailVerifiedAt)
     {
@@ -281,6 +294,7 @@ public sealed class User : AggregateRoot
             Email.Create(email),
             contact,
             role,
+            status,
             userIdentifier,
             emailVerifiedAt);
     }
@@ -299,6 +313,7 @@ public sealed class User : AggregateRoot
             return;
 
         EmailVerifiedAt = verifiedAt;
+        Status = UserStatus.Active;
         SetUpdateData();
     }
 
@@ -310,6 +325,27 @@ public sealed class User : AggregateRoot
     {
         Email = Email.Create(email);
         EmailVerifiedAt = null;
+        Status = UserStatus.PendingEmailVerification;
+        SetUpdateData();
+    }
+
+    /// <summary>
+    /// Operação para bloquear o usuário.
+    /// </summary>
+    public void Block()
+    {
+        Status = UserStatus.Blocked;
+        SetUpdateData();
+    }
+
+    /// <summary>
+    /// Operação para ativar o usuário quando o e-mail já estiver verificado.
+    /// </summary>
+    public void ActivateUser()
+    {
+        DomainException.When(!IsEmailVerified, "O usuário só pode ser ativado após verificar o e-mail.");
+
+        Status = UserStatus.Active;
         SetUpdateData();
     }
 
@@ -358,6 +394,8 @@ public sealed class User : AggregateRoot
         DomainException.When(string.IsNullOrWhiteSpace(Contact), "O contato é obrigatório.");
         DomainException.When(UserIdentifier == Guid.Empty, "O identificador do usuário é obrigatório.");
         DomainException.When(!Enum.IsDefined(typeof(Role), Role), "Perfil de usuário inválido.");
+        DomainException.When(!Enum.IsDefined(typeof(UserStatus), Status), "Status do usuário inválido.");
+        DomainException.When(Status == UserStatus.Active && !IsEmailVerified, "O usuário ativo deve possuir e-mail verificado.");
     }
 
     #endregion

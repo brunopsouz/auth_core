@@ -1,0 +1,28 @@
+using AuthCore.Domain.Common.DomainEvents;
+
+namespace AuthCore.Domain.Common.Repositories;
+
+/// <summary>
+/// Define operações de persistência para mensagens de outbox.
+/// </summary>
+public interface IOutboxRepository
+{
+    /// <summary>
+    /// Operação para adicionar uma mensagem de outbox.
+    /// </summary>
+    /// <param name="message">Mensagem a ser persistida.</param>
+    Task AddAsync(OutboxMessage message);
+
+    /// <summary>
+    /// Operação para obter mensagens pendentes de processamento.
+    /// </summary>
+    /// <param name="take">Quantidade máxima de mensagens.</param>
+    /// <returns>Coleção de mensagens pendentes.</returns>
+    Task<IReadOnlyCollection<OutboxMessage>> GetPendingAsync(int take);
+
+    /// <summary>
+    /// Operação para atualizar uma mensagem de outbox.
+    /// </summary>
+    /// <param name="message">Mensagem atualizada.</param>
+    Task UpdateAsync(OutboxMessage message);
+}

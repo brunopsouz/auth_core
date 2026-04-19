@@ -1,6 +1,8 @@
 using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Repositories;
+using AuthCore.Domain.Passports.Services;
 using AuthCore.Domain.Security.Cryptography;
+using AuthCore.Domain.Security.Emails;
 using AuthCore.Domain.Security.Tokens.Services;
 using AuthCore.Domain.Users.Repositories;
 using AuthCore.Infrastructure.Abstractions.Data;
@@ -10,11 +12,15 @@ using AuthCore.Infrastructure.Persistences.Read.PostgreSQL.Repositories;
 using AuthCore.Infrastructure.Persistences.Write.PostgreSQL.Connections;
 using AuthCore.Infrastructure.Persistences.Write.PostgreSQL.Repositories;
 using AuthCore.Infrastructure.Persistences.Write.PostgreSQL.UnitOfWork;
+using AuthCore.Infrastructure.Security.Emails;
 using AuthCore.Infrastructure.Security.Cryptography;
 using AuthCore.Infrastructure.Security.Tokens;
+using AuthCore.Infrastructure.Services.Caching;
+using AuthCore.Infrastructure.Services.Messaging;
 using FluentMigrator.Runner;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace AuthCore.Infrastructure;
 
@@ -59,6 +65,11 @@ public static class InfrastructureDependencyInjection
         AddJwtOptions(services, configuration);
         AddRedisOptions(services, configuration);
         AddRabbitMqOptions(services, configuration);
+        AddSessionOptions(services, configuration);
+        AddCookieOptions(services, configuration);
+        AddCsrfOptions(services, configuration);
+        AddEmailVerificationOptions(services, configuration);
+        AddOutboxOptions(services, configuration);
     }
 
     /// <summary>
@@ -71,6 +82,11 @@ public static class InfrastructureDependencyInjection
         services.AddScoped<NpgsqlUnitOfWork>();
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<NpgsqlUnitOfWork>());
         services.AddScoped<IDatabaseSession>(serviceProvider => serviceProvider.GetRequiredService<NpgsqlUnitOfWork>());
+        services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
+        {
+            var redisOptions = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<RedisOptions>>().Value;
+            return ConnectionMultiplexer.Connect(redisOptions.ConnectionString);
+        });
     }
 
     /// <summary>
@@ -82,6 +98,9 @@ public static class InfrastructureDependencyInjection
         services.AddScoped<IPasswordEncripter, BCryptNet>();
         services.AddScoped<IAccessTokenGenerator, JwtAccessTokenGenerator>();
         services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+        services.AddScoped<ISessionService, SessionService>();
+        services.AddScoped<IEmailVerificationService, Sha256EmailVerificationService>();
+        services.AddScoped<IEmailSender, LoggingEmailSender>();
     }
 
     /// <summary>
@@ -96,6 +115,9 @@ public static class InfrastructureDependencyInjection
         services.AddScoped<IUserReadRepository>(serviceProvider => serviceProvider.GetRequiredService<UserReadRepository>());
         services.AddScoped<IPasswordRepository, PasswordRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IEmailVerificationRepository, EmailVerificationRepository>();
+        services.AddScoped<IOutboxRepository, OutboxRepository>();
+        services.AddScoped<ISessionStore, RedisSessionStore>();
     }
 
     /// <summary>
@@ -176,6 +198,70 @@ public static class InfrastructureDependencyInjection
         services
             .AddOptions<RabbitMqOptions>()
             .Bind(configuration.GetSection(RabbitMqOptions.SectionName))
+            .ValidateDataAnnotations();
+    }
+
+    /// <summary>
+    /// Operação para adicionar as opções de sessão.
+    /// </summary>
+    /// <param name="services">Coleção de serviços da aplicação.</param>
+    /// <param name="configuration">Configuração da aplicação.</param>
+    private static void AddSessionOptions(IServiceCollection services, IConfiguration configuration)
+    {
+        services
+            .AddOptions<SessionOptions>()
+            .Bind(configuration.GetSection(SessionOptions.SectionName))
+            .ValidateDataAnnotations();
+    }
+
+    /// <summary>
+    /// Operação para adicionar as opções do cookie.
+    /// </summary>
+    /// <param name="services">Coleção de serviços da aplicação.</param>
+    /// <param name="configuration">Configuração da aplicação.</param>
+    private static void AddCookieOptions(IServiceCollection services, IConfiguration configuration)
+    {
+        services
+            .AddOptions<AuthCookieOptions>()
+            .Bind(configuration.GetSection(AuthCookieOptions.SectionName))
+            .ValidateDataAnnotations();
+    }
+
+    /// <summary>
+    /// Operação para adicionar as opções de CSRF.
+    /// </summary>
+    /// <param name="services">Coleção de serviços da aplicação.</param>
+    /// <param name="configuration">Configuração da aplicação.</param>
+    private static void AddCsrfOptions(IServiceCollection services, IConfiguration configuration)
+    {
+        services
+            .AddOptions<CsrfOptions>()
+            .Bind(configuration.GetSection(CsrfOptions.SectionName));
+    }
+
+    /// <summary>
+    /// Operação para adicionar as opções de verificação de e-mail.
+    /// </summary>
+    /// <param name="services">Coleção de serviços da aplicação.</param>
+    /// <param name="configuration">Configuração da aplicação.</param>
+    private static void AddEmailVerificationOptions(IServiceCollection services, IConfiguration configuration)
+    {
+        services
+            .AddOptions<EmailVerificationOptions>()
+            .Bind(configuration.GetSection(EmailVerificationOptions.SectionName))
+            .ValidateDataAnnotations();
+    }
+
+    /// <summary>
+    /// Operação para adicionar as opções da outbox.
+    /// </summary>
+    /// <param name="services">Coleção de serviços da aplicação.</param>
+    /// <param name="configuration">Configuração da aplicação.</param>
+    private static void AddOutboxOptions(IServiceCollection services, IConfiguration configuration)
+    {
+        services
+            .AddOptions<OutboxOptions>()
+            .Bind(configuration.GetSection(OutboxOptions.SectionName))
             .ValidateDataAnnotations();
     }
 

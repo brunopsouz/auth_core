@@ -46,6 +46,23 @@ public sealed class ApiExceptionHandlerTests
     }
 
     [Fact]
+    public async Task TryHandleAsync_WhenExceptionIsForbiddenException_ShouldReturnForbidden()
+    {
+        var httpContext = CreateHttpContext();
+
+        var wasHandled = await _exceptionHandler.TryHandleAsync(
+            httpContext,
+            new ForbiddenException("Usuário sem permissão para a operação."),
+            CancellationToken.None);
+
+        var response = await ReadResponseAsync(httpContext);
+
+        Assert.True(wasHandled);
+        Assert.Equal(StatusCodes.Status403Forbidden, httpContext.Response.StatusCode);
+        Assert.Equal(["Usuário sem permissão para a operação."], response.Errors);
+    }
+
+    [Fact]
     public async Task TryHandleAsync_WhenExceptionIsNotFoundException_ShouldReturnNotFound()
     {
         var httpContext = CreateHttpContext();

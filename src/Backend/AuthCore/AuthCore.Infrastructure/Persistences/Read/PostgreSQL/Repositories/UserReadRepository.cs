@@ -46,6 +46,7 @@ public sealed class UserReadRepository : IUserReadRepository
                 "Contact",
                 "UserIdentifier",
                 "Role",
+                "Status",
                 "EmailVerifiedAt"
             FROM "Users"
             WHERE "Id" = @UserId
@@ -81,6 +82,7 @@ public sealed class UserReadRepository : IUserReadRepository
                 "Contact",
                 "UserIdentifier",
                 "Role",
+                "Status",
                 "EmailVerifiedAt"
             FROM "Users"
             WHERE "UserIdentifier" = @UserIdentifier
@@ -116,6 +118,7 @@ public sealed class UserReadRepository : IUserReadRepository
                 "Contact",
                 "UserIdentifier",
                 "Role",
+                "Status",
                 "EmailVerifiedAt"
             FROM "Users"
             WHERE "Email" = @Email
@@ -165,6 +168,7 @@ public sealed class UserReadRepository : IUserReadRepository
             email: reader.GetString(reader.GetOrdinal("Email")),
             contact: reader.GetString(reader.GetOrdinal("Contact")),
             role: (Role)reader.GetInt32(reader.GetOrdinal("Role")),
+            status: (UserStatus)reader.GetInt32(reader.GetOrdinal("Status")),
             userIdentifier: reader.GetGuid(reader.GetOrdinal("UserIdentifier")),
             emailVerifiedAt: reader.IsDBNull(reader.GetOrdinal("EmailVerifiedAt"))
                 ? null

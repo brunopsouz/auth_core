@@ -1,6 +1,13 @@
 using AuthCore.Application.Authentication.UseCases.Login;
+using AuthCore.Application.Authentication.UseCases.LoginSession;
+using AuthCore.Application.Authentication.UseCases.LogoutAllSessions;
+using AuthCore.Application.Authentication.UseCases.LogoutCurrentSession;
 using AuthCore.Application.Authentication.UseCases.LogoutSession;
+using AuthCore.Application.Authentication.UseCases.GetUserSessions;
 using AuthCore.Application.Authentication.UseCases.RefreshSession;
+using AuthCore.Application.Authentication.UseCases.ResendVerification;
+using AuthCore.Application.Authentication.UseCases.RevokeUserSession;
+using AuthCore.Application.Authentication.UseCases.VerifyEmail;
 using AuthCore.Application.Users.UseCases.ChangePassword;
 using AuthCore.Application.Users.UseCases.DeleteUser;
 using AuthCore.Application.Users.UseCases.GetUserProfile;
@@ -25,8 +32,15 @@ public static class ApplicationDependencyInjection
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<ILoginUseCase, LoginUseCase>();
+        services.AddScoped<ILoginSessionUseCase, LoginSessionUseCase>();
+        services.AddScoped<ILogoutCurrentSessionUseCase, LogoutCurrentSessionUseCase>();
         services.AddScoped<ILogoutSessionUseCase, LogoutSessionUseCase>();
+        services.AddScoped<IGetUserSessionsUseCase, GetUserSessionsUseCase>();
+        services.AddScoped<IRevokeUserSessionUseCase, RevokeUserSessionUseCase>();
+        services.AddScoped<ILogoutAllSessionsUseCase, LogoutAllSessionsUseCase>();
         services.AddScoped<IRefreshSessionUseCase, RefreshSessionUseCase>();
+        services.AddScoped<IVerifyEmailUseCase, VerifyEmailUseCase>();
+        services.AddScoped<IResendVerificationUseCase, ResendVerificationUseCase>();
         services.AddScoped<IRegisterUserUseCase, RegisterUserUseCase>();
         services.AddScoped<IGetUserProfileUseCase, GetUserProfileUseCase>();
         services.AddScoped<IUpdateUserUseCase, UpdateUserUseCase>();

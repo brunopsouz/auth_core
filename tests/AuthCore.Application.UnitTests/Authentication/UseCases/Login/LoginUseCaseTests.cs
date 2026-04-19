@@ -1,6 +1,7 @@
 using global::AuthCore.Application.UnitTests.Authentication.Support;
 using AuthCore.Application.Authentication.UseCases.Login;
 using AuthCore.Domain.Common.Enums;
+using AuthCore.Domain.Common.Exceptions;
 
 namespace AuthCore.Application.UnitTests.Authentication.UseCases.Login;
 
@@ -105,7 +106,7 @@ public sealed class LoginUseCaseTests
     }
 
     [Fact]
-    public async Task Execute_WhenUserCannotSignIn_ShouldThrowUnauthorizedAccessExceptionWithoutPersistingChanges()
+    public async Task Execute_WhenUserCannotSignIn_ShouldThrowForbiddenExceptionWithoutPersistingChanges()
     {
         var userRepository = new FakeUserReadRepository();
         var passwordRepository = new FakePasswordRepository();
@@ -128,12 +129,13 @@ public sealed class LoginUseCaseTests
         userRepository.Store(user);
         passwordRepository.Store(password);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => useCase.Execute(new global::AuthCore.Application.Authentication.UseCases.Login.LoginCommand
+        var exception = await Assert.ThrowsAsync<ForbiddenException>(() => useCase.Execute(new global::AuthCore.Application.Authentication.UseCases.Login.LoginCommand
         {
             Email = user.Email.Value,
             Password = "ValidPassword#2026"
         }));
 
+        Assert.Equal("O usuário precisa verificar o e-mail antes de autenticar.", exception.Message);
         Assert.Empty(passwordRepository.UpdatedPasswords);
         Assert.Empty(refreshTokenRepository.AddedRefreshTokens);
         Assert.Equal(0, unitOfWork.BegunTransactions);

@@ -1,7 +1,10 @@
+using System.Text.Json;
+using AuthCore.Domain.Common.DomainEvents;
 using AuthCore.Domain.Common.Exceptions;
 using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Aggregates;
 using AuthCore.Domain.Passports.Repositories;
+using AuthCore.Domain.Passports.Services;
 using AuthCore.Domain.Security.Cryptography;
 using AuthCore.Domain.Common.Enums;
 using AuthCore.Domain.Users.Aggregates;
@@ -15,6 +18,9 @@ namespace AuthCore.Application.Users.UseCases.RegisterUser;
 /// </summary>
 public sealed class RegisterUserUseCase : IRegisterUserUseCase
 {
+    private readonly IEmailVerificationRepository _emailVerificationRepository;
+    private readonly IEmailVerificationService _emailVerificationService;
+    private readonly IOutboxRepository _outboxRepository;
     private readonly IPasswordEncripter _passwordEncripter;
     private readonly IPasswordRepository _passwordRepository;
     private readonly IUnitOfWork _unitOfWork;
@@ -35,12 +41,18 @@ public sealed class RegisterUserUseCase : IRegisterUserUseCase
         IUserRepository userRepository,
         IUserReadRepository userReadRepository,
         IPasswordRepository passwordRepository,
+        IEmailVerificationRepository emailVerificationRepository,
+        IEmailVerificationService emailVerificationService,
+        IOutboxRepository outboxRepository,
         IPasswordEncripter passwordEncripter,
         IUnitOfWork unitOfWork)
     {
         _userRepository = userRepository;
         _userReadRepository = userReadRepository;
         _passwordRepository = passwordRepository;
+        _emailVerificationRepository = emailVerificationRepository;
+        _emailVerificationService = emailVerificationService;
+        _outboxRepository = outboxRepository;
         _passwordEncripter = passwordEncripter;
         _unitOfWork = unitOfWork;
     }
@@ -69,9 +81,30 @@ public sealed class RegisterUserUseCase : IRegisterUserUseCase
             command.Email,
             command.Contact,
             Role.User);
-
+        var emailVerificationMaterial = _emailVerificationService.Create();
         var passwordHash = _passwordEncripter.Encrypt(command.Password);
         var password = Password.Create(user.Id, passwordHash, PasswordStatus.FirstAccess);
+        var nowUtc = DateTime.UtcNow;
+        var emailVerification = EmailVerification.Issue(
+            user.Id,
+            user.Email.Value,
+            emailVerificationMaterial.Hash,
+            _emailVerificationService.GetExpiresAtUtc(),
+            _emailVerificationService.GetMaxAttempts(),
+            _emailVerificationService.GetCooldownUntilUtc(),
+            nowUtc);
+        var outboxEvent = new EmailVerificationRequested
+        {
+            UserId = user.Id,
+            Email = user.Email.Value,
+            Code = emailVerificationMaterial.Code,
+            RequestedAtUtc = nowUtc
+        };
+        outboxEvent.Validate();
+        var outboxMessage = OutboxMessage.Create(
+            nameof(EmailVerificationRequested),
+            JsonSerializer.Serialize(outboxEvent),
+            nowUtc);
 
         await _unitOfWork.BeginTransactionAsync();
 
@@ -79,6 +112,8 @@ public sealed class RegisterUserUseCase : IRegisterUserUseCase
         {
             await _userRepository.AddAsync(user);
             await _passwordRepository.AddAsync(password);
+            await _emailVerificationRepository.AddAsync(emailVerification);
+            await _outboxRepository.AddAsync(outboxMessage);
             await _unitOfWork.CommitAsync();
         }
         catch

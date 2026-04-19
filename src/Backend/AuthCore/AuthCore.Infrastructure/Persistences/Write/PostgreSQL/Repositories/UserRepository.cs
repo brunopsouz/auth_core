@@ -47,6 +47,7 @@ public sealed class UserRepository : IUserRepository
                 "Contact",
                 "UserIdentifier",
                 "Role",
+                "Status",
                 "EmailVerifiedAt"
             )
             VALUES
@@ -62,6 +63,7 @@ public sealed class UserRepository : IUserRepository
                 @Contact,
                 @UserIdentifier,
                 @Role,
+                @Status,
                 @EmailVerifiedAt
             );
             """;
@@ -80,6 +82,7 @@ public sealed class UserRepository : IUserRepository
         command.Parameters.AddWithValue("Contact", user.Contact);
         command.Parameters.AddWithValue("UserIdentifier", user.UserIdentifier);
         command.Parameters.AddWithValue("Role", (int)user.Role);
+        command.Parameters.AddWithValue("Status", (int)user.Status);
         command.Parameters.AddWithValue("EmailVerifiedAt", user.EmailVerifiedAt ?? (object)DBNull.Value);
 
         await command.ExecuteNonQueryAsync();
@@ -104,6 +107,7 @@ public sealed class UserRepository : IUserRepository
                 "Email" = @Email,
                 "Contact" = @Contact,
                 "Role" = @Role,
+                "Status" = @Status,
                 "EmailVerifiedAt" = @EmailVerifiedAt
             WHERE "Id" = @Id;
             """;
@@ -120,6 +124,7 @@ public sealed class UserRepository : IUserRepository
         command.Parameters.AddWithValue("Email", user.Email.Value);
         command.Parameters.AddWithValue("Contact", user.Contact);
         command.Parameters.AddWithValue("Role", (int)user.Role);
+        command.Parameters.AddWithValue("Status", (int)user.Status);
         command.Parameters.AddWithValue("EmailVerifiedAt", user.EmailVerifiedAt ?? (object)DBNull.Value);
 
         await command.ExecuteNonQueryAsync();

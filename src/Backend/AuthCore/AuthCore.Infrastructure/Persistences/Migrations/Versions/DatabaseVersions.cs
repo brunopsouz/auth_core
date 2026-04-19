@@ -29,4 +29,19 @@ public static class DatabaseVersions
     /// Versão de criação da tabela de refresh tokens.
     /// </summary>
     public const long TABLE_REFRESH_TOKENS = 5;
+
+    /// <summary>
+    /// Versão de inclusão do status funcional do usuário.
+    /// </summary>
+    public const long USERS_STATUS = 6;
+
+    /// <summary>
+    /// Versão de expansão da tabela de verificação de e-mail.
+    /// </summary>
+    public const long EMAIL_VERIFICATION_EXPANSION = 7;
+
+    /// <summary>
+    /// Versão de criação da tabela de outbox.
+    /// </summary>
+    public const long TABLE_OUTBOX_MESSAGES = 8;
 }

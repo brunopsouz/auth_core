@@ -1,8 +1,10 @@
 using System.Security.Claims;
 using System.Text;
+using AuthCore.Api.Authentication;
 using AuthCore.Api.Exceptions;
 using AuthCore.Api.HealthChecks;
 using AuthCore.Infrastructure.Configurations;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +18,8 @@ namespace AuthCore.Api;
 /// </summary>
 public static class ApiDependencyInjection
 {
-    private const string AuthenticationScheme = JwtBearerDefaults.AuthenticationScheme;
+    private const string JwtAuthenticationScheme = JwtBearerDefaults.AuthenticationScheme;
+    private const string PolicyAuthenticationScheme = "AuthCore";
 
     /// <summary>
     /// Operação para adicionar os serviços da API.
@@ -48,16 +51,40 @@ public static class ApiDependencyInjection
     #region Helpers
 
     /// <summary>
-    /// Operação para adicionar a autenticação JWT.
+    /// Operação para adicionar a autenticação da API.
     /// </summary>
     /// <param name="services">Coleção de serviços da aplicação.</param>
     /// <param name="configuration">Configuração da aplicação.</param>
     private static void AddAuthentication(IServiceCollection services, IConfiguration configuration)
     {
         var jwtOptions = GetJwtOptions(configuration);
+        var authCookieOptions = GetAuthCookieOptions(configuration);
 
-        services.AddAuthentication(AuthenticationScheme)
-            .AddJwtBearer(options =>
+        services.AddAuthentication(options =>
+            {
+                options.DefaultScheme = PolicyAuthenticationScheme;
+                options.DefaultAuthenticateScheme = PolicyAuthenticationScheme;
+                options.DefaultChallengeScheme = PolicyAuthenticationScheme;
+            })
+            .AddPolicyScheme(PolicyAuthenticationScheme, PolicyAuthenticationScheme, options =>
+            {
+                options.ForwardDefaultSelector = context =>
+                {
+                    var authorizationHeader = context.Request.Headers.Authorization.ToString();
+
+                    if (!string.IsNullOrWhiteSpace(authorizationHeader)
+                        && authorizationHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return JwtAuthenticationScheme;
+                    }
+
+                    if (context.Request.Cookies.ContainsKey(authCookieOptions.SessionCookieName))
+                        return SessionAuthenticationDefaults.AuthenticationScheme;
+
+                    return JwtAuthenticationScheme;
+                };
+            })
+            .AddJwtBearer(JwtAuthenticationScheme, options =>
             {
                 options.RequireHttpsMetadata = true;
                 options.TokenValidationParameters = new TokenValidationParameters
@@ -73,7 +100,10 @@ public static class ApiDependencyInjection
                     NameClaimType = ClaimTypes.NameIdentifier,
                     RoleClaimType = ClaimTypes.Role
                 };
-            });
+            })
+            .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(
+                SessionAuthenticationDefaults.AuthenticationScheme,
+                _ => { });
     }
 
     /// <summary>
@@ -110,6 +140,24 @@ public static class ApiDependencyInjection
     }
 
     /// <summary>
+    /// Operação para obter as configurações do cookie de autenticação.
+    /// </summary>
+    /// <param name="configuration">Configuração da aplicação.</param>
+    /// <returns>Configurações válidas do cookie de autenticação.</returns>
+    private static AuthCookieOptions GetAuthCookieOptions(IConfiguration configuration)
+    {
+        var authCookieOptions = configuration
+            .GetSection(AuthCookieOptions.SectionName)
+            .Get<AuthCookieOptions>()
+            ?? new AuthCookieOptions();
+
+        if (string.IsNullOrWhiteSpace(authCookieOptions.SessionCookieName))
+            throw new InvalidOperationException("O nome do cookie da sessão não foi configurado.");
+
+        return authCookieOptions;
+    }
+
+    /// <summary>
     /// Operação para adicionar a configuração do Swagger.
     /// </summary>
     /// <param name="services">Coleção de serviços da aplicação.</param>
@@ -121,7 +169,7 @@ public static class ApiDependencyInjection
             var documentationFilePath = Path.Combine(AppContext.BaseDirectory, documentationFileName);
 
             options.IncludeXmlComments(documentationFilePath, includeControllerXmlComments: true);
-            options.AddSecurityDefinition(AuthenticationScheme, new OpenApiSecurityScheme
+            options.AddSecurityDefinition(JwtAuthenticationScheme, new OpenApiSecurityScheme
             {
                 Type = SecuritySchemeType.Http,
                 Scheme = "bearer",
@@ -139,7 +187,7 @@ public static class ApiDependencyInjection
                         Reference = new OpenApiReference
                         {
                             Type = ReferenceType.SecurityScheme,
-                            Id = AuthenticationScheme
+                            Id = JwtAuthenticationScheme
                         }
                     },
                     []
