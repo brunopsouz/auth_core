@@ -431,4 +431,6 @@ src/.env
 # Ignore
 *.agents
 docs/explain
-# docs/specs
+docs/specs
+AGENTS.md
+.env.*

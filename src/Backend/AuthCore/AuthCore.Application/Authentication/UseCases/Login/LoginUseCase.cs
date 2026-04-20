@@ -14,7 +14,7 @@ using AuthCore.Domain.Users.Repositories;
 namespace AuthCore.Application.Authentication.UseCases.Login;
 
 /// <summary>
-/// Representa caso de uso para autenticar um usuário.
+/// Representa caso de uso para autenticar um usuário no modo token.
 /// </summary>
 public sealed class LoginUseCase : ILoginUseCase
 {
@@ -61,7 +61,7 @@ public sealed class LoginUseCase : ILoginUseCase
     #endregion
 
     /// <summary>
-    /// Operação para autenticar um usuário.
+    /// Operação para autenticar um usuário no modo token.
     /// </summary>
     /// <param name="command">Comando com as credenciais do login.</param>
     /// <returns>Resultado da sessão autenticada.</returns>

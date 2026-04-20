@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using AuthCore.Domain.Security.Tokens;
 using AuthCore.Domain.Security.Tokens.Models;
 using AuthCore.Domain.Security.Tokens.Services;
 using AuthCore.Domain.Users.Aggregates;
@@ -88,6 +89,8 @@ public sealed class JwtAccessTokenGenerator : IAccessTokenGenerator
             new Claim("role", user.Role.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email.Value),
             new Claim(ClaimTypes.Email, user.Email.Value),
+            new Claim(AuthTokenClaimTypes.UserStatus, user.Status.ToString()),
+            new Claim(AuthTokenClaimTypes.UserIsActive, user.IsActive.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, tokenId.ToString())
         ];
     }

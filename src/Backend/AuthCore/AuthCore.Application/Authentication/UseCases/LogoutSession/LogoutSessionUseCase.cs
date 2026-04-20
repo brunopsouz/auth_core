@@ -4,7 +4,7 @@ using AuthCore.Domain.Security.Tokens.Services;
 namespace AuthCore.Application.Authentication.UseCases.LogoutSession;
 
 /// <summary>
-/// Representa caso de uso para encerrar uma sessão autenticada.
+/// Representa caso de uso para encerrar uma autenticação do modo token.
 /// </summary>
 public sealed class LogoutSessionUseCase : ILogoutSessionUseCase
 {
@@ -31,7 +31,7 @@ public sealed class LogoutSessionUseCase : ILogoutSessionUseCase
     #endregion
 
     /// <summary>
-    /// Operação para encerrar uma sessão autenticada.
+    /// Operação para encerrar uma autenticação do modo token.
     /// </summary>
     /// <param name="command">Comando com o refresh token informado.</param>
     public async Task Execute(LogoutSessionCommand command)
@@ -62,7 +62,7 @@ public sealed class LogoutSessionUseCase : ILogoutSessionUseCase
     #region Helpers
 
     /// <summary>
-    /// Operação para revogar a família da sessão encerrada.
+    /// Operação para revogar a família da autenticação encerrada.
     /// </summary>
     /// <param name="familyId">Identificador da família de rotação.</param>
     private async Task RevokeFamilyAsync(Guid familyId)

@@ -1,10 +1,12 @@
 using AuthCore.Api;
+using AuthCore.Api.Security;
 using AuthCore.Api.Contracts.Responses;
 using AuthCore.Api.Controllers;
 using AuthCore.Application;
 using AuthCore.Application.Users.UseCases.ChangePassword;
 using AuthCore.Application.Users.UseCases.DeleteUser;
 using AuthCore.Application.Users.UseCases.GetUserProfile;
+using AuthCore.Domain.Common.Exceptions;
 using AuthCore.Domain.Common.Enums;
 using AuthCore.Domain.Passports.Aggregates;
 using AuthCore.Domain.Passports.Repositories;
@@ -160,6 +162,7 @@ public sealed class UserSecurityIntegrationTests : IClassFixture<PostgreSqlInteg
         await using var provider = BuildApplicationServiceProvider(_fixture.DatabaseConnectionString);
         await using var scope = provider.CreateAsyncScope();
         var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        var authenticatedUserAccessValidator = scope.ServiceProvider.GetRequiredService<IAuthenticatedUserAccessValidator>();
         var accessTokenGenerator = scope.ServiceProvider.GetRequiredService<IAccessTokenGenerator>();
         var authenticationService = scope.ServiceProvider.GetRequiredService<IAuthenticationService>();
         var useCase = scope.ServiceProvider.GetRequiredService<IGetUserProfileUseCase>();
@@ -190,7 +193,7 @@ public sealed class UserSecurityIntegrationTests : IClassFixture<PostgreSqlInteg
 
         httpContext.User = authenticateResult.Principal!;
 
-        var result = await controller.GetUserProfile(useCase);
+        var result = await controller.GetUserProfile(useCase, authenticatedUserAccessValidator);
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<ResponseUserProfileJson>(okResult.Value);
 
@@ -198,6 +201,111 @@ public sealed class UserSecurityIntegrationTests : IClassFixture<PostgreSqlInteg
         Assert.Equal(user.FullName, response.FullName);
         Assert.Equal(user.Role.ToString(), response.Role);
         Assert.True(response.IsEmailVerified);
+    }
+
+    /// <summary>
+    /// Verifica se o bearer nega acesso quando o token carrega um usuário pendente de verificação.
+    /// </summary>
+    [Fact]
+    public async Task GetUserProfile_WhenBearerTokenRepresentsPendingEmailVerification_ShouldThrowForbiddenException()
+    {
+        if (!_fixture.IsAvailable)
+            return;
+
+        await using var provider = BuildApplicationServiceProvider(_fixture.DatabaseConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        var authenticatedUserAccessValidator = scope.ServiceProvider.GetRequiredService<IAuthenticatedUserAccessValidator>();
+        var accessTokenGenerator = scope.ServiceProvider.GetRequiredService<IAccessTokenGenerator>();
+        var authenticationService = scope.ServiceProvider.GetRequiredService<IAuthenticationService>();
+        var pendingUser = User.Register(
+            firstName: "Pending",
+            lastName: "User",
+            email: $"pending-bearer.{Guid.NewGuid():N}@authcore.dev",
+            contact: "11999999999",
+            role: Role.User);
+        var accessToken = accessTokenGenerator.Generate(pendingUser);
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = scope.ServiceProvider
+        };
+        var controller = new UserController
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = httpContext
+            }
+        };
+        var useCase = new SpyGetUserProfileUseCase();
+
+        await userRepository.AddAsync(pendingUser);
+
+        httpContext.Request.Headers.Authorization = $"Bearer {accessToken.Token}";
+
+        var authenticateResult = await authenticationService.AuthenticateAsync(
+            httpContext,
+            JwtBearerDefaults.AuthenticationScheme);
+
+        Assert.True(authenticateResult.Succeeded);
+        Assert.NotNull(authenticateResult.Principal);
+
+        httpContext.User = authenticateResult.Principal!;
+
+        var exception = await Assert.ThrowsAsync<ForbiddenException>(() => controller.GetUserProfile(useCase, authenticatedUserAccessValidator));
+
+        Assert.Equal("O usuário precisa verificar o e-mail antes de autenticar.", exception.Message);
+        Assert.False(useCase.WasCalled);
+    }
+
+    /// <summary>
+    /// Verifica se o bearer nega acesso quando o usuário é desativado após a emissão do token.
+    /// </summary>
+    [Fact]
+    public async Task GetUserProfile_WhenUserIsDeactivatedAfterTokenIssuance_ShouldThrowForbiddenException()
+    {
+        if (!_fixture.IsAvailable)
+            return;
+
+        await using var provider = BuildApplicationServiceProvider(_fixture.DatabaseConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        var authenticatedUserAccessValidator = scope.ServiceProvider.GetRequiredService<IAuthenticatedUserAccessValidator>();
+        var accessTokenGenerator = scope.ServiceProvider.GetRequiredService<IAccessTokenGenerator>();
+        var authenticationService = scope.ServiceProvider.GetRequiredService<IAuthenticationService>();
+        var user = CreateVerifiedUser($"deactivated-bearer.{Guid.NewGuid():N}@authcore.dev");
+        var accessToken = accessTokenGenerator.Generate(user);
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = scope.ServiceProvider
+        };
+        var controller = new UserController
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = httpContext
+            }
+        };
+        var useCase = new SpyGetUserProfileUseCase();
+
+        await userRepository.AddAsync(user);
+        user.Deactivate();
+        await userRepository.UpdateAsync(user);
+
+        httpContext.Request.Headers.Authorization = $"Bearer {accessToken.Token}";
+
+        var authenticateResult = await authenticationService.AuthenticateAsync(
+            httpContext,
+            JwtBearerDefaults.AuthenticationScheme);
+
+        Assert.True(authenticateResult.Succeeded);
+        Assert.NotNull(authenticateResult.Principal);
+
+        httpContext.User = authenticateResult.Principal!;
+
+        var exception = await Assert.ThrowsAsync<ForbiddenException>(() => controller.GetUserProfile(useCase, authenticatedUserAccessValidator));
+
+        Assert.Equal("O usuário não pode autenticar no momento.", exception.Message);
+        Assert.False(useCase.WasCalled);
     }
 
     #region Helpers
@@ -257,6 +365,17 @@ public sealed class UserSecurityIntegrationTests : IClassFixture<PostgreSqlInteg
         user.VerifyEmail(new DateTime(2026, 4, 14, 9, 0, 0, DateTimeKind.Utc));
 
         return user;
+    }
+
+    private sealed class SpyGetUserProfileUseCase : IGetUserProfileUseCase
+    {
+        public bool WasCalled { get; private set; }
+
+        public Task<GetUserProfileResult> Execute(GetUserProfileQuery query)
+        {
+            WasCalled = true;
+            throw new InvalidOperationException("O caso de uso não deveria ser chamado.");
+        }
     }
 
     #endregion

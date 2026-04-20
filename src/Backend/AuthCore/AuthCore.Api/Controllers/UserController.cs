@@ -1,6 +1,7 @@
 using AuthCore.Api.Contracts;
 using AuthCore.Api.Contracts.Requests;
 using AuthCore.Api.Contracts.Responses;
+using AuthCore.Api.Security;
 using AuthCore.Application.Common.Models.Responses;
 using AuthCore.Application.Users.UseCases.ChangePassword;
 using AuthCore.Application.Users.UseCases.DeleteUser;
@@ -8,7 +9,6 @@ using AuthCore.Application.Users.UseCases.GetUserProfile;
 using AuthCore.Application.Users.UseCases.RegisterUser;
 using AuthCore.Application.Users.UseCases.UpdateUser;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace AuthCore.Api.Controllers;
 
@@ -57,16 +57,20 @@ public sealed class UserController : ControllerBase
     /// Operação para obter o perfil do usuário autenticado.
     /// </summary>
     /// <param name="useCase">Caso de uso responsável por consultar o perfil do usuário.</param>
+    /// <param name="authenticatedUserAccessValidator">Validador do usuário autenticado por bearer.</param>
     /// <returns>Resposta com os dados do perfil do usuário.</returns>
     [HttpGet("profile")]
     [ProducesResponseType(typeof(ResponseUserProfileJson), StatusCodes.Status200OK)]
     [AuthenticatedUser]
     public async Task<ActionResult<ResponseUserProfileJson>> GetUserProfile(
-        [FromServices] IGetUserProfileUseCase useCase)
+        [FromServices] IGetUserProfileUseCase useCase,
+        [FromServices] IAuthenticatedUserAccessValidator authenticatedUserAccessValidator)
     {
+        var userIdentifier = await authenticatedUserAccessValidator.ValidateAndGetUserIdentifierAsync(User);
+
         var result = await useCase.Execute(new GetUserProfileQuery
         {
-            UserIdentifier = GetAuthenticatedUserIdentifier()
+            UserIdentifier = userIdentifier
         });
         var response = new ResponseUserProfileJson
         {
@@ -86,6 +90,7 @@ public sealed class UserController : ControllerBase
     /// Operação para atualizar o perfil do usuário autenticado.
     /// </summary>
     /// <param name="useCase">Caso de uso responsável pela atualização do usuário.</param>
+    /// <param name="authenticatedUserAccessValidator">Validador do usuário autenticado por bearer.</param>
     /// <param name="request">Dados da requisição de atualização.</param>
     /// <returns>Resposta sem conteúdo após a atualização do usuário.</returns>
     [HttpPut("profile")]
@@ -94,11 +99,14 @@ public sealed class UserController : ControllerBase
     [AuthenticatedUser]
     public async Task<ActionResult> UpdateUserProfile(
         [FromServices] IUpdateUserUseCase useCase,
+        [FromServices] IAuthenticatedUserAccessValidator authenticatedUserAccessValidator,
         [FromBody] RequestUpdateUserJson request)
     {
+        var userIdentifier = await authenticatedUserAccessValidator.ValidateAndGetUserIdentifierAsync(User);
+
         var command = new UpdateUserCommand
         {
-            UserIdentifier = GetAuthenticatedUserIdentifier(),
+            UserIdentifier = userIdentifier,
             FirstName = request.FirstName,
             LastName = request.LastName,
             Contact = request.Contact
@@ -113,6 +121,7 @@ public sealed class UserController : ControllerBase
     /// Operação para alterar a senha do usuário autenticado.
     /// </summary>
     /// <param name="useCase">Caso de uso responsável pela alteração de senha.</param>
+    /// <param name="authenticatedUserAccessValidator">Validador do usuário autenticado por bearer.</param>
     /// <param name="request">Dados da requisição de alteração de senha.</param>
     /// <returns>Resposta sem conteúdo após a alteração da senha.</returns>
     [HttpPut("change-password")]
@@ -121,11 +130,14 @@ public sealed class UserController : ControllerBase
     [AuthenticatedUser]
     public async Task<ActionResult> ChangePassword(
         [FromServices] IChangePasswordUseCase useCase,
+        [FromServices] IAuthenticatedUserAccessValidator authenticatedUserAccessValidator,
         [FromBody] RequestChangePasswordJson request)
     {
+        var userIdentifier = await authenticatedUserAccessValidator.ValidateAndGetUserIdentifierAsync(User);
+
         var command = new ChangePasswordCommand
         {
-            UserIdentifier = GetAuthenticatedUserIdentifier(),
+            UserIdentifier = userIdentifier,
             CurrentPassword = request.CurrentPassword,
             NewPassword = request.NewPassword,
             ConfirmNewPassword = request.ConfirmNewPassword
@@ -140,45 +152,22 @@ public sealed class UserController : ControllerBase
     /// Operação para excluir o usuário autenticado.
     /// </summary>
     /// <param name="useCase">Caso de uso responsável pela exclusão do usuário.</param>
+    /// <param name="authenticatedUserAccessValidator">Validador do usuário autenticado por bearer.</param>
     /// <returns>Resposta sem conteúdo após a exclusão do usuário.</returns>
     [HttpDelete]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [AuthenticatedUser]
     public async Task<ActionResult> Delete(
-        [FromServices] IDeleteUserUseCase useCase)
+        [FromServices] IDeleteUserUseCase useCase,
+        [FromServices] IAuthenticatedUserAccessValidator authenticatedUserAccessValidator)
     {
+        var userIdentifier = await authenticatedUserAccessValidator.ValidateAndGetUserIdentifierAsync(User);
+
         await useCase.Execute(new DeleteUserCommand
         {
-            UserIdentifier = GetAuthenticatedUserIdentifier()
+            UserIdentifier = userIdentifier
         });
 
         return NoContent();
     }
-
-    #region Helpers
-
-    /// <summary>
-    /// Operação para obter o identificador público do usuário autenticado.
-    /// </summary>
-    /// <returns>Identificador público do usuário autenticado.</returns>
-    private Guid GetAuthenticatedUserIdentifier()
-    {
-        var claimValues = new[]
-        {
-            User.FindFirstValue(ClaimTypes.NameIdentifier),
-            User.FindFirstValue("sub"),
-            User.FindFirstValue("user_identifier"),
-            User.FindFirstValue("userIdentifier")
-        };
-
-        foreach (var claimValue in claimValues)
-        {
-            if (Guid.TryParse(claimValue, out var userIdentifier))
-                return userIdentifier;
-        }
-
-        throw new UnauthorizedAccessException("O identificador do usuário autenticado não foi encontrado.");
-    }
-
-    #endregion
 }

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using AuthCore.Api;
 using AuthCore.Api.Controllers;
 using AuthCore.Application;
+using AuthCore.Domain.Security.Tokens;
 using AuthCore.Domain.Security.Tokens.Services;
 using AuthCore.Domain.Users.Aggregates;
 using AuthCore.Domain.Users.Enums;
@@ -68,6 +69,8 @@ public sealed class JwtAuthenticationIntegrationTests
         Assert.Equal(authenticatedUser.UserIdentifier.ToString(), GetClaimValue(jwtToken.Claims, ClaimTypes.NameIdentifier, "nameid"));
         Assert.Equal(authenticatedUser.Role.ToString(), GetClaimValue(jwtToken.Claims, ClaimTypes.Role, "role"));
         Assert.Equal(authenticatedUser.Email.Value, GetClaimValue(jwtToken.Claims, JwtRegisteredClaimNames.Email, ClaimTypes.Email));
+        Assert.Equal(authenticatedUser.Status.ToString(), GetClaimValue(jwtToken.Claims, AuthTokenClaimTypes.UserStatus));
+        Assert.Equal(authenticatedUser.IsActive.ToString(), GetClaimValue(jwtToken.Claims, AuthTokenClaimTypes.UserIsActive));
         Assert.Equal(accessTokenResult.TokenId.ToString(), GetClaimValue(jwtToken.Claims, JwtRegisteredClaimNames.Jti));
         Assert.Equal(authenticatedUser.UserIdentifier.ToString(), authenticateResult.Principal!.FindFirstValue(ClaimTypes.NameIdentifier));
     }

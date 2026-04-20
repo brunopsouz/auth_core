@@ -11,6 +11,7 @@ using AuthCore.Application.Authentication.UseCases.Login;
 using AuthCore.Application.Authentication.UseCases.LoginSession;
 using AuthCore.Application.Authentication.UseCases.LogoutAllSessions;
 using AuthCore.Application.Authentication.UseCases.LogoutCurrentSession;
+using AuthCore.Application.Authentication.UseCases.LogoutSession;
 using AuthCore.Application.Authentication.UseCases.RefreshSession;
 using AuthCore.Application.Authentication.UseCases.RevokeUserSession;
 using AuthCore.Application.Common.Models.Responses;
@@ -176,6 +177,40 @@ public sealed class AuthController : ControllerBase
             });
 
             return Ok(CreateAuthenticatedSessionResponse(result));
+        }
+        catch (Exception exception) when (TryMapKnownException(exception, out var actionResult))
+        {
+            return actionResult;
+        }
+    }
+
+    /// <summary>
+    /// Operação para encerrar a autenticação do modo token.
+    /// </summary>
+    /// <param name="useCase">Caso de uso responsável por encerrar a autenticação do modo token.</param>
+    /// <param name="request">Dados da requisição de logout token-based.</param>
+    /// <returns>Resposta sem conteúdo após a revogação do refresh token informado.</returns>
+    [HttpPost("token/logout")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult> TokenLogout(
+        [FromServices] ILogoutSessionUseCase useCase,
+        [FromBody] RequestTokenLogoutJson request)
+    {
+        try
+        {
+            await useCase.Execute(new LogoutSessionCommand
+            {
+                RefreshToken = request.RefreshToken
+            });
+
+            _logger.LogInformation(
+                "Logout do modo token concluído. IpAddress={IpAddress}",
+                HttpContext.Connection.RemoteIpAddress?.ToString());
+
+            return NoContent();
         }
         catch (Exception exception) when (TryMapKnownException(exception, out var actionResult))
         {

@@ -1,3 +1,5 @@
+using AuthCore.Domain.Security.Tokens;
+
 namespace AuthCore.Api.Authentication;
 
 /// <summary>
@@ -23,10 +25,10 @@ public static class SessionAuthenticationDefaults
     /// <summary>
     /// Tipo de claim com o status funcional do usuário.
     /// </summary>
-    public const string UserStatusClaimType = "authcore_user_status";
+    public const string UserStatusClaimType = AuthTokenClaimTypes.UserStatus;
 
     /// <summary>
     /// Tipo de claim com o indicador de atividade do usuário.
     /// </summary>
-    public const string UserIsActiveClaimType = "authcore_user_is_active";
+    public const string UserIsActiveClaimType = AuthTokenClaimTypes.UserIsActive;
 }

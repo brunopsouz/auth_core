@@ -9,7 +9,7 @@ using AuthCore.Domain.Users.Repositories;
 namespace AuthCore.Application.Authentication.UseCases.RefreshSession;
 
 /// <summary>
-/// Representa caso de uso para renovar uma sessão autenticada.
+/// Representa caso de uso para renovar uma autenticação do modo token.
 /// </summary>
 public sealed class RefreshSessionUseCase : IRefreshSessionUseCase
 {
@@ -49,7 +49,7 @@ public sealed class RefreshSessionUseCase : IRefreshSessionUseCase
     #endregion
 
     /// <summary>
-    /// Operação para renovar uma sessão autenticada.
+    /// Operação para renovar uma autenticação do modo token.
     /// </summary>
     /// <param name="command">Comando com o refresh token informado.</param>
     /// <returns>Resultado da sessão renovada.</returns>
@@ -88,7 +88,7 @@ public sealed class RefreshSessionUseCase : IRefreshSessionUseCase
     #region Helpers
 
     /// <summary>
-    /// Operação para rotacionar a sessão autenticada.
+    /// Operação para rotacionar a autenticação do modo token.
     /// </summary>
     /// <param name="currentRefreshToken">Refresh token atual.</param>
     /// <param name="user">Usuário da sessão.</param>
@@ -144,7 +144,7 @@ public sealed class RefreshSessionUseCase : IRefreshSessionUseCase
     }
 
     /// <summary>
-    /// Operação para criar a falha genérica de renovação da sessão.
+    /// Operação para criar a falha genérica de renovação do modo token.
     /// </summary>
     /// <returns>Exceção de acesso não autorizado.</returns>
     private static UnauthorizedAccessException CreateInvalidSessionException()

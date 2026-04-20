@@ -1,7 +1,7 @@
 namespace AuthCore.Application.Authentication.UseCases.RefreshSession;
 
 /// <summary>
-/// Representa comando para renovar uma sessão autenticada.
+/// Representa comando para renovar uma autenticação do modo token.
 /// </summary>
 public sealed class RefreshSessionCommand
 {

@@ -44,6 +44,7 @@ public static class ApiDependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ILoginRateLimiter, RedisLoginRateLimiter>();
         services.AddScoped<ICsrfRequestValidator, CookieCsrfRequestValidator>();
+        services.AddScoped<IAuthenticatedUserAccessValidator, AuthenticatedUserAccessValidator>();
         services.AddRouting(options => options.LowercaseUrls = true);
         services.AddAuthorization();
         services.AddHealthChecks()

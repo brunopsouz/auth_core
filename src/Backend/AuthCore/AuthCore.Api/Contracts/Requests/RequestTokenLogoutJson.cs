@@ -1,9 +1,9 @@
 namespace AuthCore.Api.Contracts.Requests;
 
 /// <summary>
-/// Representa requisição para encerrar uma sessão autenticada.
+/// Representa requisição para encerrar a autenticação do modo token.
 /// </summary>
-public sealed class RequestLogoutSessionJson
+public sealed class RequestTokenLogoutJson
 {
     /// <summary>
     /// Refresh token informado pelo cliente.

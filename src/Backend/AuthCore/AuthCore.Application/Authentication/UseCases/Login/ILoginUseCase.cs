@@ -3,12 +3,12 @@ using AuthCore.Application.Authentication.Models;
 namespace AuthCore.Application.Authentication.UseCases.Login;
 
 /// <summary>
-/// Define operação para autenticar um usuário.
+/// Define operação para autenticar um usuário no modo token.
 /// </summary>
 public interface ILoginUseCase
 {
     /// <summary>
-    /// Operação para autenticar um usuário.
+    /// Operação para autenticar um usuário no modo token.
     /// </summary>
     /// <param name="command">Comando com as credenciais do login.</param>
     /// <returns>Resultado da sessão autenticada.</returns>

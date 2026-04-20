@@ -1,7 +1,7 @@
 namespace AuthCore.Application.Authentication.UseCases.LogoutSession;
 
 /// <summary>
-/// Representa comando para encerrar uma sessão autenticada.
+/// Representa comando para encerrar uma autenticação do modo token.
 /// </summary>
 public sealed class LogoutSessionCommand
 {

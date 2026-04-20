@@ -11,6 +11,7 @@ using AuthCore.Application.Authentication.UseCases.Login;
 using AuthCore.Application.Authentication.UseCases.LoginSession;
 using AuthCore.Application.Authentication.UseCases.LogoutAllSessions;
 using AuthCore.Application.Authentication.UseCases.LogoutCurrentSession;
+using AuthCore.Application.Authentication.UseCases.LogoutSession;
 using AuthCore.Application.Authentication.UseCases.RefreshSession;
 using AuthCore.Application.Authentication.UseCases.RevokeUserSession;
 using AuthCore.Application.Common.Models.Responses;
@@ -121,6 +122,86 @@ public sealed class AuthControllerIntegrationTests
         Assert.Equal("ValidPassword#2026", useCase.LastCommand.Password);
         Assert.Equal(useCase.Result.AccessToken, response.AccessToken);
         Assert.Equal(useCase.Result.RefreshToken, response.RefreshToken);
+    }
+
+    [Fact]
+    public async Task Refresh_WhenUseCaseSucceeds_ShouldReturnOkWithAuthenticatedSessionResponse()
+    {
+        var useCase = new SpyRefreshSessionUseCase
+        {
+            Result = new AuthenticatedSessionResult
+            {
+                AccessToken = "next-access-token",
+                AccessTokenExpiresAtUtc = new DateTime(2026, 4, 13, 15, 15, 0, DateTimeKind.Utc),
+                RefreshToken = "next-refresh-token",
+                RefreshTokenExpiresAtUtc = new DateTime(2026, 4, 20, 15, 15, 0, DateTimeKind.Utc)
+            }
+        };
+        var controller = CreateController();
+
+        var result = await controller.Refresh(useCase, new RequestRefreshSessionJson
+        {
+            RefreshToken = "current-refresh-token"
+        });
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<ResponseAuthenticatedSessionJson>(okResult.Value);
+
+        Assert.Equal("current-refresh-token", useCase.LastCommand!.RefreshToken);
+        Assert.Equal(useCase.Result.AccessToken, response.AccessToken);
+        Assert.Equal(useCase.Result.RefreshToken, response.RefreshToken);
+    }
+
+    [Fact]
+    public async Task TokenLogout_WhenUseCaseSucceeds_ShouldReturnNoContentAndForwardRefreshToken()
+    {
+        var useCase = new SpyLogoutSessionUseCase();
+        var controller = CreateController();
+
+        var result = await controller.TokenLogout(useCase, new RequestTokenLogoutJson
+        {
+            RefreshToken = "refresh-token"
+        });
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Equal("refresh-token", useCase.LastCommand!.RefreshToken);
+    }
+
+    [Fact]
+    public async Task TokenLogout_WhenUseCaseThrowsUnauthorizedAccessException_ShouldReturnUnauthorizedResponseErrorJson()
+    {
+        var useCase = new ThrowingLogoutSessionUseCase(new UnauthorizedAccessException("A sessão informada é inválida ou expirou."));
+        var controller = CreateController();
+
+        var result = await controller.TokenLogout(useCase, new RequestTokenLogoutJson
+        {
+            RefreshToken = "invalid-refresh-token"
+        });
+
+        var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result);
+        var response = Assert.IsType<ResponseErrorJson>(unauthorizedResult.Value);
+
+        Assert.Equal(["A sessão informada é inválida ou expirou."], response.Errors);
+    }
+
+    [Fact]
+    public async Task TokenLogout_WhenUseCaseCompletesForRepeatedLogout_ShouldRemainNoContent()
+    {
+        var useCase = new SpyLogoutSessionUseCase();
+        var controller = CreateController();
+
+        _ = await controller.TokenLogout(useCase, new RequestTokenLogoutJson
+        {
+            RefreshToken = "refresh-token"
+        });
+
+        var result = await controller.TokenLogout(useCase, new RequestTokenLogoutJson
+        {
+            RefreshToken = "refresh-token"
+        });
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Equal("refresh-token", useCase.LastCommand!.RefreshToken);
     }
 
     [Fact]
@@ -584,6 +665,7 @@ public sealed class AuthControllerIntegrationTests
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/login");
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/token");
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/refresh");
+        Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/token/logout");
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/me");
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/logout");
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/sessions");
@@ -688,6 +770,32 @@ public sealed class AuthControllerIntegrationTests
         }
     }
 
+    private sealed class SpyLogoutSessionUseCase : ILogoutSessionUseCase
+    {
+        public LogoutSessionCommand? LastCommand { get; private set; }
+
+        public Task Execute(LogoutSessionCommand command)
+        {
+            LastCommand = command;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingLogoutSessionUseCase : ILogoutSessionUseCase
+    {
+        private readonly Exception _exception;
+
+        public ThrowingLogoutSessionUseCase(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public Task Execute(LogoutSessionCommand command)
+        {
+            return Task.FromException(_exception);
+        }
+    }
+
     private sealed class SpyGetUserSessionsUseCase : IGetUserSessionsUseCase
     {
         public GetUserSessionsQuery? LastQuery { get; private set; }
@@ -697,6 +805,19 @@ public sealed class AuthControllerIntegrationTests
         public Task<UserSessionsResult> Execute(GetUserSessionsQuery query)
         {
             LastQuery = query;
+            return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class SpyRefreshSessionUseCase : IRefreshSessionUseCase
+    {
+        public RefreshSessionCommand? LastCommand { get; private set; }
+
+        public AuthenticatedSessionResult Result { get; set; } = new();
+
+        public Task<AuthenticatedSessionResult> Execute(RefreshSessionCommand command)
+        {
+            LastCommand = command;
             return Task.FromResult(Result);
         }
     }
