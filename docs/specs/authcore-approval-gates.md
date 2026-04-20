@@ -18,9 +18,9 @@ Regra operacional adotada:
 
 ## Estado atual
 
-- Bloco atual concluído: `Bloco 4 - Hardening da Sessão`
-- Próximo bloco elegível: `Bloco 5 - Modo Token Secundário`
-- Observação: o fluxo principal stateful agora está endurecido com política unificada de cookie, validação de origem para mutações autenticadas por cookie e rate limiting básico no login.
+- Bloco atual concluído: `Bloco 5 - Modo Token Secundário`
+- Próximo bloco elegível: `Bloco 6 - Registro, OTP e Outbox`
+- Observação: o fluxo secundário JWT/refresh agora está exposto separadamente com `POST /auth/token`, `POST /auth/refresh` e `POST /auth/token/logout`, mantendo a trilha principal stateful como contrato primário.
 
 ---
 
@@ -161,7 +161,7 @@ Comando de liberação sugerido:
 ## Bloco 5 - Modo Token Secundário
 
 Status:
-- `Aguardando autorização`
+- `Concluído`
 
 Objetivo:
 - reposicionar o modo JWT/refresh como trilha secundária, separada do login por sessão.
@@ -182,7 +182,7 @@ Critério de parada:
 - fluxo secundário funcionando: `/auth/token -> /auth/refresh -> token logout`.
 
 Autorização:
-- `Pendente`
+- `Executado`
 
 Comando de liberação sugerido:
 - `Autorizo o Bloco 5 - Modo Token Secundário`
@@ -252,6 +252,6 @@ Comando de liberação sugerido:
 - `Bloco 2 - Sessão Primária`: executado
 - `Bloco 3 - Sessões por Device`: executado
 - `Bloco 4 - Hardening da Sessão`: executado
-- `Bloco 5 - Modo Token Secundário`: pendente
+- `Bloco 5 - Modo Token Secundário`: executado
 - `Bloco 6 - Registro, OTP e Outbox`: pendente
 - `Bloco 7 - Worker e Fechamento Operacional`: pendente
