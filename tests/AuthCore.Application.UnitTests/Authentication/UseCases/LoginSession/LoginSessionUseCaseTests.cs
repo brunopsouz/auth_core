@@ -18,7 +18,6 @@ public sealed class LoginSessionUseCaseTests
         {
             ExpiresAtUtc = new DateTime(2026, 4, 20, 12, 0, 0, DateTimeKind.Utc)
         };
-        var unitOfWork = new SpyUnitOfWork();
         var user = AuthenticationFixtures.CreateVerifiedUser();
         var password = AuthenticationFixtures.CreatePassword(user.Id, PasswordStatus.Active, failedAttempts: 2);
         var useCase = new LoginSessionUseCase(
@@ -26,8 +25,7 @@ public sealed class LoginSessionUseCaseTests
             passwordRepository,
             passwordEncripter,
             sessionStore,
-            sessionService,
-            unitOfWork);
+            sessionService);
 
         userRepository.Store(user);
         passwordRepository.Store(password);
@@ -53,10 +51,6 @@ public sealed class LoginSessionUseCaseTests
         Assert.Equal(sessionService.ExpiresAtUtc, savedSession.ExpiresAtUtc);
         Assert.Equal("127.0.0.1", savedSession.IpAddress);
         Assert.Equal("Mozilla/5.0", savedSession.UserAgent);
-
-        Assert.Equal(1, unitOfWork.BegunTransactions);
-        Assert.Equal(1, unitOfWork.CommittedTransactions);
-        Assert.Equal(0, unitOfWork.RolledBackTransactions);
     }
 
     [Fact]
@@ -67,7 +61,6 @@ public sealed class LoginSessionUseCaseTests
         var passwordEncripter = new FakePasswordEncripter { IsValidResult = false };
         var sessionStore = new FakeSessionStore();
         var sessionService = new FakeSessionService();
-        var unitOfWork = new SpyUnitOfWork();
         var user = AuthenticationFixtures.CreateVerifiedUser();
         var password = AuthenticationFixtures.CreatePassword(user.Id);
         var useCase = new LoginSessionUseCase(
@@ -75,8 +68,7 @@ public sealed class LoginSessionUseCaseTests
             passwordRepository,
             passwordEncripter,
             sessionStore,
-            sessionService,
-            unitOfWork);
+            sessionService);
 
         userRepository.Store(user);
         passwordRepository.Store(password);
@@ -92,9 +84,6 @@ public sealed class LoginSessionUseCaseTests
 
         var updatedPassword = Assert.Single(passwordRepository.UpdatedPasswords);
         Assert.Equal(1, updatedPassword.LoginAttempt.FailedAttempts);
-        Assert.Equal(1, unitOfWork.BegunTransactions);
-        Assert.Equal(1, unitOfWork.CommittedTransactions);
-        Assert.Equal(0, unitOfWork.RolledBackTransactions);
     }
 
     [Fact]
@@ -105,7 +94,6 @@ public sealed class LoginSessionUseCaseTests
         var passwordEncripter = new FakePasswordEncripter { IsValidResult = true };
         var sessionStore = new FakeSessionStore();
         var sessionService = new FakeSessionService();
-        var unitOfWork = new SpyUnitOfWork();
         var user = AuthenticationFixtures.CreateUnverifiedUser();
         var password = AuthenticationFixtures.CreatePassword(user.Id);
         var useCase = new LoginSessionUseCase(
@@ -113,8 +101,7 @@ public sealed class LoginSessionUseCaseTests
             passwordRepository,
             passwordEncripter,
             sessionStore,
-            sessionService,
-            unitOfWork);
+            sessionService);
 
         userRepository.Store(user);
         passwordRepository.Store(password);
@@ -128,8 +115,5 @@ public sealed class LoginSessionUseCaseTests
         Assert.Equal("O usuário precisa verificar o e-mail antes de autenticar.", exception.Message);
         Assert.Empty(passwordRepository.UpdatedPasswords);
         Assert.Empty(sessionStore.SavedSessions);
-        Assert.Equal(0, unitOfWork.BegunTransactions);
-        Assert.Equal(0, unitOfWork.CommittedTransactions);
-        Assert.Equal(0, unitOfWork.RolledBackTransactions);
     }
 }

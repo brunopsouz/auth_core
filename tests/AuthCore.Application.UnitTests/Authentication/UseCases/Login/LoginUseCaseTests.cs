@@ -66,6 +66,55 @@ public sealed class LoginUseCaseTests
     }
 
     [Fact]
+    public async Task Execute_WhenCredentialsAreValidAndPasswordDoesNotNeedReset_ShouldPersistRefreshTokenWithoutTransaction()
+    {
+        var userRepository = new FakeUserReadRepository();
+        var passwordRepository = new FakePasswordRepository();
+        var passwordEncripter = new FakePasswordEncripter { IsValidResult = true };
+        var accessTokenGenerator = new FakeAccessTokenGenerator();
+        var refreshTokenService = new FakeRefreshTokenService
+        {
+            Material = new()
+            {
+                Token = "refresh-token-plain",
+                Hash = "refresh-token-generated-hash"
+            }
+        };
+        var refreshTokenRepository = new FakeRefreshTokenRepository();
+        var unitOfWork = new SpyUnitOfWork();
+        var user = AuthenticationFixtures.CreateVerifiedUser();
+        var password = AuthenticationFixtures.CreatePassword(user.Id, PasswordStatus.Active);
+        var useCase = new LoginUseCase(
+            userRepository,
+            passwordRepository,
+            passwordEncripter,
+            accessTokenGenerator,
+            refreshTokenService,
+            refreshTokenRepository,
+            unitOfWork);
+
+        userRepository.Store(user);
+        passwordRepository.Store(password);
+
+        var result = await useCase.Execute(new global::AuthCore.Application.Authentication.UseCases.Login.LoginCommand
+        {
+            Email = user.Email.Value,
+            Password = "ValidPassword#2026"
+        });
+
+        Assert.Equal(accessTokenGenerator.Result.Token, result.AccessToken);
+        Assert.Equal(refreshTokenService.Material.Token, result.RefreshToken);
+        Assert.Empty(passwordRepository.UpdatedPasswords);
+
+        var persistedRefreshToken = Assert.Single(refreshTokenRepository.AddedRefreshTokens);
+        Assert.Equal(user.Id, persistedRefreshToken.UserId);
+        Assert.Equal(refreshTokenService.Material.Hash, persistedRefreshToken.TokenHash);
+        Assert.Equal(0, unitOfWork.BegunTransactions);
+        Assert.Equal(0, unitOfWork.CommittedTransactions);
+        Assert.Equal(0, unitOfWork.RolledBackTransactions);
+    }
+
+    [Fact]
     public async Task Execute_WhenPasswordIsInvalid_ShouldRegisterFailureAndThrowUnauthorizedAccessException()
     {
         var userRepository = new FakeUserReadRepository();
@@ -100,8 +149,8 @@ public sealed class LoginUseCaseTests
         var updatedPassword = Assert.Single(passwordRepository.UpdatedPasswords);
         Assert.Equal(1, updatedPassword.LoginAttempt.FailedAttempts);
         Assert.Empty(refreshTokenRepository.AddedRefreshTokens);
-        Assert.Equal(1, unitOfWork.BegunTransactions);
-        Assert.Equal(1, unitOfWork.CommittedTransactions);
+        Assert.Equal(0, unitOfWork.BegunTransactions);
+        Assert.Equal(0, unitOfWork.CommittedTransactions);
         Assert.Equal(0, unitOfWork.RolledBackTransactions);
     }
 

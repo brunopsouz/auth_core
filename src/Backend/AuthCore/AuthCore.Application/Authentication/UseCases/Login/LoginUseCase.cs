@@ -5,6 +5,7 @@ using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Aggregates;
 using AuthCore.Domain.Passports.Repositories;
 using AuthCore.Domain.Security.Cryptography;
+using AuthCore.Domain.Security.Tokens.Models;
 using AuthCore.Domain.Security.Tokens.Services;
 using AuthCore.Domain.Users.Aggregates;
 using AuthCore.Domain.Users.Enums;
@@ -116,13 +117,17 @@ public sealed class LoginUseCase : ILoginUseCase
             ? password.ResetLoginAttempts(GetAuthenticatedPasswordStatus(password))
             : null;
 
+        if (updatedPassword is null)
+        {
+            await _refreshTokenRepository.AddAsync(refreshToken);
+            return CreateAuthenticatedSessionResult(accessToken, refreshTokenMaterial.Token, refreshToken.ExpiresAtUtc);
+        }
+
         await _unitOfWork.BeginTransactionAsync();
 
         try
         {
-            if (updatedPassword is not null)
-                await _passwordRepository.UpdateAsync(updatedPassword);
-
+            await _passwordRepository.UpdateAsync(updatedPassword);
             await _refreshTokenRepository.AddAsync(refreshToken);
             await _unitOfWork.CommitAsync();
         }
@@ -132,13 +137,7 @@ public sealed class LoginUseCase : ILoginUseCase
             throw;
         }
 
-        return new AuthenticatedSessionResult
-        {
-            AccessToken = accessToken.Token,
-            AccessTokenExpiresAtUtc = accessToken.ExpiresAtUtc,
-            RefreshToken = refreshTokenMaterial.Token,
-            RefreshTokenExpiresAtUtc = refreshToken.ExpiresAtUtc
-        };
+        return CreateAuthenticatedSessionResult(accessToken, refreshTokenMaterial.Token, refreshToken.ExpiresAtUtc);
     }
 
     /// <summary>
@@ -148,19 +147,7 @@ public sealed class LoginUseCase : ILoginUseCase
     private async Task RegisterLoginFailureAsync(Password password)
     {
         var updatedPassword = password.RegisterLoginFailure();
-
-        await _unitOfWork.BeginTransactionAsync();
-
-        try
-        {
-            await _passwordRepository.UpdateAsync(updatedPassword);
-            await _unitOfWork.CommitAsync();
-        }
-        catch
-        {
-            await _unitOfWork.RollbackAsync();
-            throw;
-        }
+        await _passwordRepository.UpdateAsync(updatedPassword);
     }
 
     /// <summary>
@@ -229,6 +216,27 @@ public sealed class LoginUseCase : ILoginUseCase
             UserStatus.PendingEmailVerification => new ForbiddenException("O usuário precisa verificar o e-mail antes de autenticar."),
             UserStatus.Blocked => new ForbiddenException("O usuário está bloqueado para autenticação."),
             _ => new ForbiddenException("O usuário não pode autenticar no momento.")
+        };
+    }
+
+    /// <summary>
+    /// Operação para criar o resultado da sessão autenticada.
+    /// </summary>
+    /// <param name="accessToken">Access token emitido.</param>
+    /// <param name="refreshToken">Refresh token em texto puro.</param>
+    /// <param name="refreshTokenExpiresAtUtc">Expiração do refresh token.</param>
+    /// <returns>Resultado da autenticação.</returns>
+    private static AuthenticatedSessionResult CreateAuthenticatedSessionResult(
+        AccessTokenResult accessToken,
+        string refreshToken,
+        DateTime refreshTokenExpiresAtUtc)
+    {
+        return new AuthenticatedSessionResult
+        {
+            AccessToken = accessToken.Token,
+            AccessTokenExpiresAtUtc = accessToken.ExpiresAtUtc,
+            RefreshToken = refreshToken,
+            RefreshTokenExpiresAtUtc = refreshTokenExpiresAtUtc
         };
     }
 

@@ -7,11 +7,10 @@ namespace AuthCore.Application.UnitTests.Authentication.UseCases.LogoutSession;
 public sealed class LogoutSessionUseCaseTests
 {
     [Fact]
-    public async Task Execute_WhenRefreshTokenIsActive_ShouldRevokeTokenTransactionally()
+    public async Task Execute_WhenRefreshTokenIsActive_ShouldRevokeToken()
     {
         var refreshTokenRepository = new FakeRefreshTokenRepository();
         var refreshTokenService = new FakeRefreshTokenService();
-        var unitOfWork = new SpyUnitOfWork();
         var rawRefreshToken = "active-refresh-token";
         var refreshToken = RefreshToken.IssueInitial(
             Guid.NewGuid(),
@@ -19,8 +18,7 @@ public sealed class LogoutSessionUseCaseTests
             DateTime.UtcNow.AddDays(3));
         var useCase = new LogoutSessionUseCase(
             refreshTokenRepository,
-            refreshTokenService,
-            unitOfWork);
+            refreshTokenService);
 
         refreshTokenRepository.Store(refreshToken);
 
@@ -35,17 +33,13 @@ public sealed class LogoutSessionUseCaseTests
         Assert.NotNull(updatedRefreshToken.RevokedAtUtc);
         Assert.Equal("logout", updatedRefreshToken.RevocationReason);
         Assert.Empty(refreshTokenRepository.RevokeFamilyCalls);
-        Assert.Equal(1, unitOfWork.BegunTransactions);
-        Assert.Equal(1, unitOfWork.CommittedTransactions);
-        Assert.Equal(0, unitOfWork.RolledBackTransactions);
     }
 
     [Fact]
-    public async Task Execute_WhenRefreshTokenWasAlreadyConsumed_ShouldRevokeFamilyTransactionally()
+    public async Task Execute_WhenRefreshTokenWasAlreadyConsumed_ShouldRevokeFamily()
     {
         var refreshTokenRepository = new FakeRefreshTokenRepository();
         var refreshTokenService = new FakeRefreshTokenService();
-        var unitOfWork = new SpyUnitOfWork();
         var rawRefreshToken = "consumed-refresh-token";
         var consumedRefreshToken = RefreshToken.IssueInitial(
                 Guid.NewGuid(),
@@ -54,8 +48,7 @@ public sealed class LogoutSessionUseCaseTests
             .Consume(Guid.NewGuid(), DateTime.UtcNow.AddMinutes(-10));
         var useCase = new LogoutSessionUseCase(
             refreshTokenRepository,
-            refreshTokenService,
-            unitOfWork);
+            refreshTokenService);
 
         refreshTokenRepository.Store(consumedRefreshToken);
 
@@ -69,9 +62,6 @@ public sealed class LogoutSessionUseCaseTests
         Assert.Equal(consumedRefreshToken.FamilyId, revokeFamilyCall.FamilyId);
         Assert.Equal("logout", revokeFamilyCall.Reason);
         Assert.Empty(refreshTokenRepository.UpdatedRefreshTokens);
-        Assert.Equal(1, unitOfWork.BegunTransactions);
-        Assert.Equal(1, unitOfWork.CommittedTransactions);
-        Assert.Equal(0, unitOfWork.RolledBackTransactions);
     }
 
     [Fact]
@@ -79,11 +69,9 @@ public sealed class LogoutSessionUseCaseTests
     {
         var refreshTokenRepository = new FakeRefreshTokenRepository();
         var refreshTokenService = new FakeRefreshTokenService();
-        var unitOfWork = new SpyUnitOfWork();
         var useCase = new LogoutSessionUseCase(
             refreshTokenRepository,
-            refreshTokenService,
-            unitOfWork);
+            refreshTokenService);
 
         await useCase.Execute(new LogoutSessionCommand
         {
@@ -92,8 +80,5 @@ public sealed class LogoutSessionUseCaseTests
 
         Assert.Empty(refreshTokenRepository.UpdatedRefreshTokens);
         Assert.Empty(refreshTokenRepository.RevokeFamilyCalls);
-        Assert.Equal(0, unitOfWork.BegunTransactions);
-        Assert.Equal(0, unitOfWork.CommittedTransactions);
-        Assert.Equal(0, unitOfWork.RolledBackTransactions);
     }
 }

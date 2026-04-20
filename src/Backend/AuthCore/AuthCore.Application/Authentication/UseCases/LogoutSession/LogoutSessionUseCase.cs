@@ -1,4 +1,3 @@
-using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Repositories;
 using AuthCore.Domain.Security.Tokens.Services;
 
@@ -13,7 +12,6 @@ public sealed class LogoutSessionUseCase : ILogoutSessionUseCase
 
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IRefreshTokenService _refreshTokenService;
-    private readonly IUnitOfWork _unitOfWork;
 
     #region Constructors
 
@@ -22,15 +20,12 @@ public sealed class LogoutSessionUseCase : ILogoutSessionUseCase
     /// </summary>
     /// <param name="refreshTokenRepository">Repositório de refresh token.</param>
     /// <param name="refreshTokenService">Serviço de refresh token.</param>
-    /// <param name="unitOfWork">Unidade de trabalho transacional.</param>
     public LogoutSessionUseCase(
         IRefreshTokenRepository refreshTokenRepository,
-        IRefreshTokenService refreshTokenService,
-        IUnitOfWork unitOfWork)
+        IRefreshTokenService refreshTokenService)
     {
         _refreshTokenRepository = refreshTokenRepository;
         _refreshTokenService = refreshTokenService;
-        _unitOfWork = unitOfWork;
     }
 
     #endregion
@@ -61,19 +56,7 @@ public sealed class LogoutSessionUseCase : ILogoutSessionUseCase
             return;
 
         var revokedRefreshToken = refreshToken.Revoke(LOGOUT_REASON, nowUtc);
-
-        await _unitOfWork.BeginTransactionAsync();
-
-        try
-        {
-            await _refreshTokenRepository.UpdateAsync(revokedRefreshToken);
-            await _unitOfWork.CommitAsync();
-        }
-        catch
-        {
-            await _unitOfWork.RollbackAsync();
-            throw;
-        }
+        await _refreshTokenRepository.UpdateAsync(revokedRefreshToken);
     }
 
     #region Helpers
@@ -85,19 +68,7 @@ public sealed class LogoutSessionUseCase : ILogoutSessionUseCase
     private async Task RevokeFamilyAsync(Guid familyId)
     {
         var revokedAtUtc = DateTime.UtcNow;
-
-        await _unitOfWork.BeginTransactionAsync();
-
-        try
-        {
-            await _refreshTokenRepository.RevokeFamilyAsync(familyId, revokedAtUtc, LOGOUT_REASON);
-            await _unitOfWork.CommitAsync();
-        }
-        catch
-        {
-            await _unitOfWork.RollbackAsync();
-            throw;
-        }
+        await _refreshTokenRepository.RevokeFamilyAsync(familyId, revokedAtUtc, LOGOUT_REASON);
     }
 
     #endregion

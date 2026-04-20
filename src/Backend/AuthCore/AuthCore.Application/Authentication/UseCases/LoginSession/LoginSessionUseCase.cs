@@ -1,7 +1,6 @@
 using AuthCore.Application.Authentication.Models;
 using AuthCore.Domain.Common.Exceptions;
 using AuthCore.Domain.Common.Enums;
-using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Aggregates;
 using AuthCore.Domain.Passports.Repositories;
 using AuthCore.Domain.Passports.Services;
@@ -23,7 +22,6 @@ public sealed class LoginSessionUseCase : ILoginSessionUseCase
     private readonly IPasswordRepository _passwordRepository;
     private readonly ISessionService _sessionService;
     private readonly ISessionStore _sessionStore;
-    private readonly IUnitOfWork _unitOfWork;
     private readonly IUserReadRepository _userReadRepository;
 
     #region Constructors
@@ -36,21 +34,18 @@ public sealed class LoginSessionUseCase : ILoginSessionUseCase
     /// <param name="passwordEncripter">Serviço de criptografia de senha.</param>
     /// <param name="sessionStore">Store de sessão autenticada.</param>
     /// <param name="sessionService">Serviço de cálculo de expiração da sessão.</param>
-    /// <param name="unitOfWork">Unidade de trabalho transacional.</param>
     public LoginSessionUseCase(
         IUserReadRepository userReadRepository,
         IPasswordRepository passwordRepository,
         IPasswordEncripter passwordEncripter,
         ISessionStore sessionStore,
-        ISessionService sessionService,
-        IUnitOfWork unitOfWork)
+        ISessionService sessionService)
     {
         _userReadRepository = userReadRepository;
         _passwordRepository = passwordRepository;
         _passwordEncripter = passwordEncripter;
         _sessionStore = sessionStore;
         _sessionService = sessionService;
-        _unitOfWork = unitOfWork;
     }
 
     #endregion
@@ -118,20 +113,7 @@ public sealed class LoginSessionUseCase : ILoginSessionUseCase
             command.UserAgent);
 
         if (updatedPassword is not null)
-        {
-            await _unitOfWork.BeginTransactionAsync();
-
-            try
-            {
-                await _passwordRepository.UpdateAsync(updatedPassword);
-                await _unitOfWork.CommitAsync();
-            }
-            catch
-            {
-                await _unitOfWork.RollbackAsync();
-                throw;
-            }
-        }
+            await _passwordRepository.UpdateAsync(updatedPassword);
 
         await _sessionStore.SaveAsync(session);
 
@@ -151,19 +133,7 @@ public sealed class LoginSessionUseCase : ILoginSessionUseCase
     private async Task RegisterLoginFailureAsync(Password password)
     {
         var updatedPassword = password.RegisterLoginFailure();
-
-        await _unitOfWork.BeginTransactionAsync();
-
-        try
-        {
-            await _passwordRepository.UpdateAsync(updatedPassword);
-            await _unitOfWork.CommitAsync();
-        }
-        catch
-        {
-            await _unitOfWork.RollbackAsync();
-            throw;
-        }
+        await _passwordRepository.UpdateAsync(updatedPassword);
     }
 
     /// <summary>

@@ -140,19 +140,7 @@ public sealed class RefreshSessionUseCase : IRefreshSessionUseCase
     private async Task RevokeFamilyAsync(Guid familyId)
     {
         var revokedAtUtc = DateTime.UtcNow;
-
-        await _unitOfWork.BeginTransactionAsync();
-
-        try
-        {
-            await _refreshTokenRepository.RevokeFamilyAsync(familyId, revokedAtUtc, REUSE_DETECTED_REASON);
-            await _unitOfWork.CommitAsync();
-        }
-        catch
-        {
-            await _unitOfWork.RollbackAsync();
-            throw;
-        }
+        await _refreshTokenRepository.RevokeFamilyAsync(familyId, revokedAtUtc, REUSE_DETECTED_REASON);
     }
 
     /// <summary>

@@ -100,8 +100,8 @@ public sealed class RefreshSessionUseCaseTests
         Assert.Equal("reuse-detected", revokeCall.Reason);
         Assert.Empty(refreshTokenRepository.AddedRefreshTokens);
         Assert.Empty(refreshTokenRepository.UpdatedRefreshTokens);
-        Assert.Equal(1, unitOfWork.BegunTransactions);
-        Assert.Equal(1, unitOfWork.CommittedTransactions);
+        Assert.Equal(0, unitOfWork.BegunTransactions);
+        Assert.Equal(0, unitOfWork.CommittedTransactions);
         Assert.Equal(0, unitOfWork.RolledBackTransactions);
     }
 
