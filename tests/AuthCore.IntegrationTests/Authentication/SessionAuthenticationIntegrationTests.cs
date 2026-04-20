@@ -1,13 +1,18 @@
 using System.Globalization;
+using System.Security.Claims;
 using AuthCore.Api;
 using AuthCore.Api.Authentication;
 using AuthCore.Api.Contracts.Requests;
 using AuthCore.Api.Contracts.Responses;
 using AuthCore.Api.Controllers;
+using AuthCore.Api.Security;
 using AuthCore.Application;
 using AuthCore.Application.Common.Models.Responses;
 using AuthCore.Application.Authentication.UseCases.LoginSession;
+using AuthCore.Application.Authentication.UseCases.LogoutAllSessions;
 using AuthCore.Application.Authentication.UseCases.LogoutCurrentSession;
+using AuthCore.Application.Authentication.UseCases.GetUserSessions;
+using AuthCore.Application.Authentication.UseCases.RevokeUserSession;
 using AuthCore.Domain.Common.Enums;
 using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Aggregates;
@@ -23,6 +28,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace AuthCore.IntegrationTests.Authentication;
@@ -230,6 +236,149 @@ public sealed class SessionAuthenticationIntegrationTests
         Assert.Contains(expectedCookieDate, httpContext.Response.Headers.SetCookie.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Execute_WhenSessionsFlowRevokesCurrentSession_ShouldInvalidateAuthenticationImmediately()
+    {
+        var userRepository = new InMemoryUserReadRepository();
+        var passwordRepository = new InMemoryPasswordRepository();
+        var sessionStore = new InMemorySessionStore();
+        var passwordEncripter = new AlwaysValidPasswordEncripter();
+        var sessionService = new FixedSessionService();
+        var unitOfWork = new SpyUnitOfWork();
+        var provider = BuildServiceProvider(
+            userRepository,
+            passwordRepository,
+            sessionStore,
+            passwordEncripter,
+            sessionService,
+            unitOfWork);
+        var user = CreateVerifiedUser();
+        var password = Password.Create(user.Id, "stored-password-hash", PasswordStatus.Active);
+
+        userRepository.Store(user);
+        passwordRepository.Store(password);
+
+        await using var asyncScope = provider.CreateAsyncScope();
+        var serviceProvider = asyncScope.ServiceProvider;
+        var loginUseCase = serviceProvider.GetRequiredService<ILoginSessionUseCase>();
+        var getUserSessionsUseCase = serviceProvider.GetRequiredService<IGetUserSessionsUseCase>();
+        var revokeUserSessionUseCase = serviceProvider.GetRequiredService<IRevokeUserSessionUseCase>();
+        var authCookieOptions = serviceProvider.GetRequiredService<IOptions<AuthCookieOptions>>();
+        var authenticationHandlerProvider = serviceProvider.GetRequiredService<IAuthenticationHandlerProvider>();
+        var authenticationSchemeProvider = serviceProvider.GetRequiredService<IAuthenticationSchemeProvider>();
+        var sessionAuthenticationScheme = await authenticationSchemeProvider.GetSchemeAsync(SessionAuthenticationDefaults.AuthenticationScheme);
+
+        var loginController = CreateController(serviceProvider);
+        var loginResult = await loginController.Login(loginUseCase, authCookieOptions, new RequestSessionLoginJson
+        {
+            Email = user.Email.Value,
+            Password = "ValidPassword#2026"
+        });
+        var loginOkResult = Assert.IsType<OkObjectResult>(loginResult.Result);
+        _ = Assert.IsType<ResponseAuthenticatedUserJson>(loginOkResult.Value);
+        var sessionId = ExtractCookieValue(loginController.Response.Headers.SetCookie.ToString(), "sid");
+
+        var sessionsContext = new DefaultHttpContext
+        {
+            RequestServices = serviceProvider
+        };
+        sessionsContext.Request.Headers.Cookie = $"sid={sessionId}";
+
+        var authenticationHandler = await authenticationHandlerProvider.GetHandlerAsync(
+            sessionsContext,
+            sessionAuthenticationScheme!.Name);
+        var authenticateResult = await authenticationHandler!.AuthenticateAsync();
+
+        Assert.True(authenticateResult.Succeeded);
+        sessionsContext.User = authenticateResult.Principal!;
+
+        var sessionsController = CreateController(serviceProvider, sessionsContext);
+        var sessionsResult = await sessionsController.GetSessions(getUserSessionsUseCase);
+        var sessionsOkResult = Assert.IsType<OkObjectResult>(sessionsResult.Result);
+        var sessionsResponse = Assert.IsType<ResponseUserSessionsJson>(sessionsOkResult.Value);
+
+        Assert.Equal(sessionId, sessionsResponse.CurrentSid);
+        Assert.Contains(sessionsResponse.Sessions, session => session.Sid == sessionId);
+
+        var revokeContext = new DefaultHttpContext
+        {
+            RequestServices = serviceProvider,
+            User = authenticateResult.Principal!
+        };
+        var revokeController = CreateController(serviceProvider, revokeContext);
+        var revokeResult = await revokeController.RevokeSession(sessionId, revokeUserSessionUseCase, authCookieOptions);
+
+        Assert.IsType<NoContentResult>(revokeResult);
+        Assert.Contains(sessionId, sessionStore.RevokedSessionIds);
+        Assert.Contains("sid=", revokeController.Response.Headers.SetCookie.ToString(), StringComparison.Ordinal);
+        Assert.Null(await sessionStore.GetByIdAsync(sessionId));
+
+        await using var reAuthenticationScope = provider.CreateAsyncScope();
+        var reAuthenticationServiceProvider = reAuthenticationScope.ServiceProvider;
+        var reAuthenticationHandlerProvider = reAuthenticationServiceProvider.GetRequiredService<IAuthenticationHandlerProvider>();
+
+        var afterRevokeContext = new DefaultHttpContext
+        {
+            RequestServices = reAuthenticationServiceProvider
+        };
+        afterRevokeContext.Request.Headers.Cookie = $"sid={sessionId}";
+
+        var authenticationHandlerAfterRevoke = await reAuthenticationHandlerProvider.GetHandlerAsync(
+            afterRevokeContext,
+            sessionAuthenticationScheme.Name);
+        var authenticateAfterRevoke = await authenticationHandlerAfterRevoke!.AuthenticateAsync();
+
+        Assert.False(authenticateAfterRevoke.Succeeded);
+        Assert.Equal(0, unitOfWork.BegunTransactions);
+        Assert.Equal(0, unitOfWork.CommittedTransactions);
+    }
+
+    [Fact]
+    public async Task LogoutAll_WhenUserHasMultipleSessions_ShouldRevokeEverySessionAndDeleteCookie()
+    {
+        var userRepository = new InMemoryUserReadRepository();
+        var passwordRepository = new InMemoryPasswordRepository();
+        var sessionStore = new InMemorySessionStore();
+        var provider = BuildServiceProvider(
+            userRepository,
+            passwordRepository,
+            sessionStore,
+            new AlwaysValidPasswordEncripter(),
+            new FixedSessionService(),
+            new SpyUnitOfWork());
+        var user = CreateVerifiedUser();
+        var currentSession = Session.Issue(user.Id, DateTime.UtcNow.AddMinutes(30), "127.0.0.1", "Browser A");
+        var anotherSession = Session.Issue(user.Id, DateTime.UtcNow.AddMinutes(30), "127.0.0.2", "Browser B");
+
+        userRepository.Store(user);
+        sessionStore.Store(currentSession);
+        sessionStore.Store(anotherSession);
+
+        await using var authScope = provider.CreateAsyncScope();
+        var serviceProvider = authScope.ServiceProvider;
+        var logoutAllUseCase = serviceProvider.GetRequiredService<ILogoutAllSessionsUseCase>();
+        var authCookieOptions = serviceProvider.GetRequiredService<IOptions<AuthCookieOptions>>();
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = serviceProvider,
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(SessionAuthenticationDefaults.InternalUserIdClaimType, user.Id.ToString()),
+                new Claim(SessionAuthenticationDefaults.SessionIdClaimType, currentSession.SessionId)
+            ],
+            SessionAuthenticationDefaults.AuthenticationScheme))
+        };
+
+        var controller = CreateController(serviceProvider, httpContext);
+        var result = await controller.LogoutAll(logoutAllUseCase, authCookieOptions);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Contains(currentSession.SessionId, sessionStore.RevokedSessionIds);
+        Assert.Contains(anotherSession.SessionId, sessionStore.RevokedSessionIds);
+        Assert.Contains("sid=", controller.Response.Headers.SetCookie.ToString(), StringComparison.Ordinal);
+        Assert.Empty(await sessionStore.ListByUserIdAsync(user.Id));
+    }
+
     #region Helpers
 
     private static ServiceProvider BuildServiceProvider(
@@ -263,6 +412,8 @@ public sealed class SessionAuthenticationIntegrationTests
             .AddSingleton<ISessionService>(sessionService)
             .AddSingleton<IUnitOfWork>(unitOfWork)
             .AddApi(configuration)
+            .AddSingleton<ILoginRateLimiter, AllowAllLoginRateLimiter>()
+            .AddScoped<ICsrfRequestValidator, AllowAllCsrfRequestValidator>()
             .AddApplication()
             .BuildServiceProvider();
     }
@@ -272,7 +423,10 @@ public sealed class SessionAuthenticationIntegrationTests
         var resolvedHttpContext = httpContext ?? new DefaultHttpContext();
         resolvedHttpContext.RequestServices = serviceProvider;
 
-        return new AuthController
+        return new AuthController(
+            serviceProvider.GetRequiredService<ICsrfRequestValidator>(),
+            serviceProvider.GetRequiredService<ILoginRateLimiter>(),
+            serviceProvider.GetRequiredService<ILogger<AuthController>>())
         {
             ControllerContext = new ControllerContext
             {
@@ -344,6 +498,21 @@ public sealed class SessionAuthenticationIntegrationTests
             _usersById[user.Id] = user;
             _usersByEmail[user.Email.Value] = user;
             _usersByIdentifier[user.UserIdentifier] = user;
+        }
+    }
+
+    private sealed class AllowAllCsrfRequestValidator : ICsrfRequestValidator
+    {
+        public void Validate(HttpRequest request)
+        {
+        }
+    }
+
+    private sealed class AllowAllLoginRateLimiter : ILoginRateLimiter
+    {
+        public Task<LoginRateLimitResult> TryAcquireAsync(string? ipAddress, string? email)
+        {
+            return Task.FromResult(LoginRateLimitResult.Allow());
         }
     }
 

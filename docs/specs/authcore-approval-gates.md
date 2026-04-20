@@ -18,9 +18,9 @@ Regra operacional adotada:
 
 ## Estado atual
 
-- Bloco atual concluído: `Bloco 2 - Sessão Primária`
-- Próximo bloco elegível: `Bloco 3 - Sessões por Device`
-- Observação: o fluxo principal stateful foi validado com autenticação por cookie `sid`, `me` e logout.
+- Bloco atual concluído: `Bloco 4 - Hardening da Sessão`
+- Próximo bloco elegível: `Bloco 5 - Modo Token Secundário`
+- Observação: o fluxo principal stateful agora está endurecido com política unificada de cookie, validação de origem para mutações autenticadas por cookie e rate limiting básico no login.
 
 ---
 
@@ -95,7 +95,7 @@ Comando de liberação sugerido:
 ## Bloco 3 - Sessões por Device
 
 Status:
-- `Aguardando autorização`
+- `Concluído`
 
 Objetivo:
 - permitir ao usuário listar e revogar sessões por device.
@@ -121,7 +121,7 @@ Entregáveis esperados:
 - integração com `ISessionStore`.
 
 Autorização:
-- `Pendente`
+- `Executado`
 
 Comando de liberação sugerido:
 - `Autorizo o Bloco 3 - Sessões por Device`
@@ -131,7 +131,7 @@ Comando de liberação sugerido:
 ## Bloco 4 - Hardening da Sessão
 
 Status:
-- `Aguardando autorização`
+- `Concluído`
 
 Objetivo:
 - endurecer o fluxo de sessão com política de cookie, CSRF e rate limiting.
@@ -151,7 +151,7 @@ Critério de parada:
 - endpoints mutáveis por cookie protegidos e login com limitação básica.
 
 Autorização:
-- `Pendente`
+- `Executado`
 
 Comando de liberação sugerido:
 - `Autorizo o Bloco 4 - Hardening da Sessão`
@@ -250,8 +250,8 @@ Comando de liberação sugerido:
 
 - `Bloco 1 - Fundação e Identidade`: executado
 - `Bloco 2 - Sessão Primária`: executado
-- `Bloco 3 - Sessões por Device`: pendente
-- `Bloco 4 - Hardening da Sessão`: pendente
+- `Bloco 3 - Sessões por Device`: executado
+- `Bloco 4 - Hardening da Sessão`: executado
 - `Bloco 5 - Modo Token Secundário`: pendente
 - `Bloco 6 - Registro, OTP e Outbox`: pendente
 - `Bloco 7 - Worker e Fechamento Operacional`: pendente

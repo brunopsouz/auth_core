@@ -1,13 +1,18 @@
+using System.Globalization;
 using System.Security.Claims;
 using AuthCore.Api.Authentication;
 using AuthCore.Api.Contracts;
 using AuthCore.Api.Contracts.Requests;
 using AuthCore.Api.Contracts.Responses;
+using AuthCore.Api.Security;
 using AuthCore.Application.Authentication.Models;
+using AuthCore.Application.Authentication.UseCases.GetUserSessions;
 using AuthCore.Application.Authentication.UseCases.Login;
 using AuthCore.Application.Authentication.UseCases.LoginSession;
+using AuthCore.Application.Authentication.UseCases.LogoutAllSessions;
 using AuthCore.Application.Authentication.UseCases.LogoutCurrentSession;
 using AuthCore.Application.Authentication.UseCases.RefreshSession;
+using AuthCore.Application.Authentication.UseCases.RevokeUserSession;
 using AuthCore.Application.Common.Models.Responses;
 using AuthCore.Domain.Common.Exceptions;
 using AuthCore.Domain.Users.Enums;
@@ -24,6 +29,36 @@ namespace AuthCore.Api.Controllers;
 [Route("api/auth")]
 public sealed class AuthController : ControllerBase
 {
+    private const string TOO_MANY_LOGIN_ATTEMPTS_MESSAGE = "Muitas tentativas de login. Aguarde alguns minutos e tente novamente.";
+
+    private readonly ICsrfRequestValidator _csrfRequestValidator;
+    private readonly ILoginRateLimiter _loginRateLimiter;
+    private readonly ILogger<AuthController> _logger;
+
+    #region Constructors
+
+    /// <summary>
+    /// Operação para criar instância da classe.
+    /// </summary>
+    /// <param name="csrfRequestValidator">Validador de origem das mutações autenticadas por cookie.</param>
+    /// <param name="loginRateLimiter">Limitador de tentativas de login.</param>
+    /// <param name="logger">Logger do fluxo de autenticação.</param>
+    public AuthController(
+        ICsrfRequestValidator csrfRequestValidator,
+        ILoginRateLimiter loginRateLimiter,
+        ILogger<AuthController> logger)
+    {
+        ArgumentNullException.ThrowIfNull(csrfRequestValidator);
+        ArgumentNullException.ThrowIfNull(loginRateLimiter);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _csrfRequestValidator = csrfRequestValidator;
+        _loginRateLimiter = loginRateLimiter;
+        _logger = logger;
+    }
+
+    #endregion
+
     /// <summary>
     /// Operação para autenticar um usuário por sessão.
     /// </summary>
@@ -36,11 +71,17 @@ public sealed class AuthController : ControllerBase
     [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<ResponseAuthenticatedUserJson>> Login(
         [FromServices] ILoginSessionUseCase useCase,
         [FromServices] IOptions<AuthCookieOptions> authCookieOptions,
         [FromBody] RequestSessionLoginJson request)
     {
+        var rateLimitResult = await TryAcquireLoginRateLimitAsync(request.Email);
+
+        if (rateLimitResult is not null)
+            return rateLimitResult;
+
         try
         {
             var result = await useCase.Execute(new LoginSessionCommand
@@ -52,11 +93,17 @@ public sealed class AuthController : ControllerBase
             });
 
             AppendSessionCookie(result.SessionId, result.ExpiresAtUtc, authCookieOptions.Value);
+            _logger.LogInformation(
+                "Login por sessão realizado com sucesso. UserId={UserId} Email={Email} IpAddress={IpAddress}",
+                result.UserIdentifier,
+                result.Email,
+                HttpContext.Connection.RemoteIpAddress?.ToString());
 
             return Ok(CreateAuthenticatedUserResponse(result.UserIdentifier, result.Email));
         }
         catch (Exception exception) when (TryMapKnownException(exception, out var actionResult))
         {
+            LogLoginFailure(exception, request.Email);
             return actionResult;
         }
     }
@@ -72,10 +119,16 @@ public sealed class AuthController : ControllerBase
     [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<ResponseAuthenticatedSessionJson>> Token(
         [FromServices] ILoginUseCase useCase,
         [FromBody] RequestLoginJson request)
     {
+        var rateLimitResult = await TryAcquireLoginRateLimitAsync(request.Email);
+
+        if (rateLimitResult is not null)
+            return rateLimitResult;
+
         try
         {
             var result = await useCase.Execute(new LoginCommand
@@ -84,10 +137,16 @@ public sealed class AuthController : ControllerBase
                 Password = request.Password
             });
 
+            _logger.LogInformation(
+                "Login no modo token realizado com sucesso. Email={Email} IpAddress={IpAddress}",
+                request.Email,
+                HttpContext.Connection.RemoteIpAddress?.ToString());
+
             return Ok(CreateAuthenticatedSessionResponse(result));
         }
         catch (Exception exception) when (TryMapKnownException(exception, out var actionResult))
         {
+            LogLoginFailure(exception, request.Email);
             return actionResult;
         }
     }
@@ -159,17 +218,135 @@ public sealed class AuthController : ControllerBase
     [AuthenticatedSession]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Logout(
         [FromServices] ILogoutCurrentSessionUseCase useCase,
         [FromServices] IOptions<AuthCookieOptions> authCookieOptions)
     {
         try
         {
+            _csrfRequestValidator.Validate(Request);
+            var sessionId = GetAuthenticatedSessionId();
+
             await useCase.Execute(new LogoutCurrentSessionCommand
             {
-                SessionId = GetAuthenticatedSessionId()
+                SessionId = sessionId
             });
             DeleteSessionCookie(authCookieOptions.Value);
+            _logger.LogInformation(
+                "Sessão atual encerrada. SessionId={SessionId}",
+                sessionId);
+
+            return NoContent();
+        }
+        catch (Exception exception) when (TryMapKnownException(exception, out var actionResult))
+        {
+            return actionResult;
+        }
+    }
+
+    /// <summary>
+    /// Operação para listar as sessões ativas do usuário autenticado.
+    /// </summary>
+    /// <param name="useCase">Caso de uso responsável pela listagem de sessões.</param>
+    /// <returns>Resposta com as sessões ativas do usuário.</returns>
+    [HttpGet("sessions")]
+    [AuthenticatedSession]
+    [ProducesResponseType(typeof(ResponseUserSessionsJson), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ResponseUserSessionsJson>> GetSessions(
+        [FromServices] IGetUserSessionsUseCase useCase)
+    {
+        try
+        {
+            var result = await useCase.Execute(new GetUserSessionsQuery
+            {
+                UserId = GetAuthenticatedInternalUserId(),
+                CurrentSessionId = GetAuthenticatedSessionId()
+            });
+
+            return Ok(CreateUserSessionsResponse(result));
+        }
+        catch (Exception exception) when (TryMapKnownException(exception, out var actionResult))
+        {
+            return actionResult;
+        }
+    }
+
+    /// <summary>
+    /// Operação para revogar uma sessão específica do usuário autenticado.
+    /// </summary>
+    /// <param name="sid">Identificador público da sessão alvo.</param>
+    /// <param name="useCase">Caso de uso responsável pela revogação da sessão.</param>
+    /// <param name="authCookieOptions">Configurações do cookie de autenticação.</param>
+    /// <returns>Resposta sem conteúdo após a revogação da sessão.</returns>
+    [HttpDelete("sessions/{sid}")]
+    [AuthenticatedSession]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> RevokeSession(
+        [FromRoute] string sid,
+        [FromServices] IRevokeUserSessionUseCase useCase,
+        [FromServices] IOptions<AuthCookieOptions> authCookieOptions)
+    {
+        try
+        {
+            _csrfRequestValidator.Validate(Request);
+            var normalizedSessionId = NormalizeSessionId(sid);
+            var currentSessionId = GetAuthenticatedSessionId();
+            var userId = GetAuthenticatedInternalUserId();
+
+            await useCase.Execute(new RevokeUserSessionCommand
+            {
+                UserId = userId,
+                SessionId = normalizedSessionId
+            });
+
+            if (string.Equals(currentSessionId, normalizedSessionId, StringComparison.Ordinal))
+                DeleteSessionCookie(authCookieOptions.Value);
+
+            _logger.LogInformation(
+                "Sessão revogada pelo usuário autenticado. SessionId={SessionId} CurrentSessionId={CurrentSessionId} UserId={UserId}",
+                normalizedSessionId,
+                currentSessionId,
+                userId);
+
+            return NoContent();
+        }
+        catch (Exception exception) when (TryMapKnownException(exception, out var actionResult))
+        {
+            return actionResult;
+        }
+    }
+
+    /// <summary>
+    /// Operação para revogar todas as sessões do usuário autenticado.
+    /// </summary>
+    /// <param name="useCase">Caso de uso responsável pela revogação global das sessões.</param>
+    /// <param name="authCookieOptions">Configurações do cookie de autenticação.</param>
+    /// <returns>Resposta sem conteúdo após a revogação global.</returns>
+    [HttpPost("logout-all")]
+    [AuthenticatedSession]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseErrorJson), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult> LogoutAll(
+        [FromServices] ILogoutAllSessionsUseCase useCase,
+        [FromServices] IOptions<AuthCookieOptions> authCookieOptions)
+    {
+        try
+        {
+            _csrfRequestValidator.Validate(Request);
+            var userId = GetAuthenticatedInternalUserId();
+
+            await useCase.Execute(new LogoutAllSessionsCommand
+            {
+                UserId = userId
+            });
+            DeleteSessionCookie(authCookieOptions.Value);
+            _logger.LogInformation("Todas as sessões do usuário foram revogadas. UserId={UserId}", userId);
 
             return NoContent();
         }
@@ -213,6 +390,32 @@ public sealed class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Operação para criar a resposta HTTP da listagem de sessões do usuário.
+    /// </summary>
+    /// <param name="result">Resultado da listagem de sessões.</param>
+    /// <returns>Resposta pronta para serialização HTTP.</returns>
+    private static ResponseUserSessionsJson CreateUserSessionsResponse(UserSessionsResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new ResponseUserSessionsJson
+        {
+            CurrentSid = result.CurrentSessionId,
+            Sessions = result.Sessions
+                .Select(session => new ResponseUserSessionJson
+                {
+                    Sid = session.SessionId,
+                    CreatedAtUtc = session.CreatedAtUtc,
+                    LastSeenAtUtc = session.LastSeenAtUtc,
+                    Ip = session.IpAddress,
+                    UserAgent = session.UserAgent,
+                    ExpiresAtUtc = session.ExpiresAtUtc
+                })
+                .ToArray()
+        };
+    }
+
+    /// <summary>
     /// Operação para obter o identificador público do usuário autenticado.
     /// </summary>
     /// <returns>Identificador público do usuário autenticado.</returns>
@@ -233,6 +436,20 @@ public sealed class AuthController : ControllerBase
         }
 
         throw new UnauthorizedAccessException("O identificador do usuário autenticado não foi encontrado.");
+    }
+
+    /// <summary>
+    /// Operação para obter o identificador interno do usuário autenticado.
+    /// </summary>
+    /// <returns>Identificador interno do usuário autenticado.</returns>
+    private Guid GetAuthenticatedInternalUserId()
+    {
+        var claimValue = User.FindFirstValue(SessionAuthenticationDefaults.InternalUserIdClaimType);
+
+        if (Guid.TryParse(claimValue, out var userId))
+            return userId;
+
+        throw new UnauthorizedAccessException("O identificador interno do usuário autenticado não foi encontrado.");
     }
 
     /// <summary>
@@ -325,14 +542,10 @@ public sealed class AuthController : ControllerBase
     /// <param name="authCookieOptions">Configurações do cookie da sessão.</param>
     private void AppendSessionCookie(string sessionId, DateTime expiresAtUtc, AuthCookieOptions authCookieOptions)
     {
-        Response.Cookies.Append(authCookieOptions.SessionCookieName, sessionId, new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = authCookieOptions.Secure,
-            SameSite = SameSiteMode.Lax,
-            Path = "/",
-            Expires = new DateTimeOffset(expiresAtUtc)
-        });
+        Response.Cookies.Append(
+            authCookieOptions.SessionCookieName,
+            sessionId,
+            SessionCookiePolicy.CreateSessionCookie(authCookieOptions, expiresAtUtc));
     }
 
     /// <summary>
@@ -341,13 +554,56 @@ public sealed class AuthController : ControllerBase
     /// <param name="authCookieOptions">Configurações do cookie da sessão.</param>
     private void DeleteSessionCookie(AuthCookieOptions authCookieOptions)
     {
-        Response.Cookies.Delete(authCookieOptions.SessionCookieName, new CookieOptions
+        Response.Cookies.Delete(
+            authCookieOptions.SessionCookieName,
+            SessionCookiePolicy.CreateExpiredSessionCookie(authCookieOptions));
+    }
+
+    /// <summary>
+    /// Operação para tentar consumir uma cota do rate limit de login.
+    /// </summary>
+    /// <param name="requestEmail">E-mail informado no login.</param>
+    /// <returns>Resultado HTTP de bloqueio quando o limite é excedido; caso contrário, nulo.</returns>
+    private async Task<ActionResult?> TryAcquireLoginRateLimitAsync(string? requestEmail)
+    {
+        var result = await _loginRateLimiter.TryAcquireAsync(
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            requestEmail);
+
+        if (result.IsAllowed)
         {
-            HttpOnly = true,
-            Secure = authCookieOptions.Secure,
-            SameSite = SameSiteMode.Lax,
-            Path = "/"
-        });
+            return null;
+        }
+
+        var retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(result.RetryAfter.TotalSeconds));
+
+        Response.Headers["Retry-After"] = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        _logger.LogWarning(
+            "Tentativa de login bloqueada por rate limit. Email={Email} IpAddress={IpAddress} RetryAfterSeconds={RetryAfterSeconds}",
+            requestEmail,
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            retryAfterSeconds);
+
+        return StatusCode(
+            StatusCodes.Status429TooManyRequests,
+            CreateErrorResponse(TOO_MANY_LOGIN_ATTEMPTS_MESSAGE));
+    }
+
+    /// <summary>
+    /// Operação para registrar falhas conhecidas de autenticação.
+    /// </summary>
+    /// <param name="exception">Exceção mapeada do fluxo de login.</param>
+    /// <param name="email">E-mail informado na tentativa.</param>
+    private void LogLoginFailure(Exception exception, string email)
+    {
+        if (exception is UnauthorizedAccessException or ForbiddenException)
+        {
+            _logger.LogWarning(
+                exception,
+                "Falha de login. Email={Email} IpAddress={IpAddress}",
+                email,
+                HttpContext.Connection.RemoteIpAddress?.ToString());
+        }
     }
 
     /// <summary>
@@ -386,6 +642,18 @@ public sealed class AuthController : ControllerBase
         {
             Errors = [errorMessage]
         };
+    }
+
+    /// <summary>
+    /// Operação para normalizar o identificador da sessão informado pela rota.
+    /// </summary>
+    /// <param name="sid">Identificador informado.</param>
+    /// <returns>Identificador normalizado.</returns>
+    private static string NormalizeSessionId(string sid)
+    {
+        return string.IsNullOrWhiteSpace(sid)
+            ? string.Empty
+            : sid.Trim();
     }
 
     #endregion

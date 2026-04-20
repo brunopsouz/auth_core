@@ -113,14 +113,10 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
     /// <param name="session">Sessão autenticada atualizada.</param>
     private void AppendSessionCookie(Session session)
     {
-        Response.Cookies.Append(_authCookieOptions.SessionCookieName, session.SessionId, new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = _authCookieOptions.Secure,
-            SameSite = SameSiteMode.Lax,
-            Path = "/",
-            Expires = new DateTimeOffset(session.ExpiresAtUtc)
-        });
+        Response.Cookies.Append(
+            _authCookieOptions.SessionCookieName,
+            session.SessionId,
+            SessionCookiePolicy.CreateSessionCookie(_authCookieOptions, session.ExpiresAtUtc));
     }
 
     #endregion

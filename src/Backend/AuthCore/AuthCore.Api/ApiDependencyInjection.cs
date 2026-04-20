@@ -3,13 +3,16 @@ using System.Text;
 using AuthCore.Api.Authentication;
 using AuthCore.Api.Exceptions;
 using AuthCore.Api.HealthChecks;
+using AuthCore.Api.Security;
 using AuthCore.Infrastructure.Configurations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Net;
 
 namespace AuthCore.Api;
 
@@ -37,6 +40,10 @@ public static class ApiDependencyInjection
         services.AddProblemDetails();
         services.AddEndpointsApiExplorer();
         services.AddHttpContextAccessor();
+        AddForwardedHeaders(services, configuration);
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ILoginRateLimiter, RedisLoginRateLimiter>();
+        services.AddScoped<ICsrfRequestValidator, CookieCsrfRequestValidator>();
         services.AddRouting(options => options.LowercaseUrls = true);
         services.AddAuthorization();
         services.AddHealthChecks()
@@ -104,6 +111,34 @@ public static class ApiDependencyInjection
             .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(
                 SessionAuthenticationDefaults.AuthenticationScheme,
                 _ => { });
+    }
+
+    /// <summary>
+    /// Operação para adicionar o tratamento de headers encaminhados por proxy.
+    /// </summary>
+    /// <param name="services">Coleção de serviços da aplicação.</param>
+    /// <param name="configuration">Configuração da aplicação.</param>
+    private static void AddForwardedHeaders(IServiceCollection services, IConfiguration configuration)
+    {
+        var proxyForwardingOptions = configuration
+            .GetSection(ProxyForwardingOptions.SectionName)
+            .Get<ProxyForwardingOptions>()
+            ?? new ProxyForwardingOptions();
+
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders =
+                ForwardedHeaders.XForwardedFor |
+                ForwardedHeaders.XForwardedHost |
+                ForwardedHeaders.XForwardedProto;
+            options.ForwardLimit = proxyForwardingOptions.ForwardLimit;
+
+            foreach (var knownProxy in proxyForwardingOptions.KnownProxies)
+                options.KnownProxies.Add(ParseIpAddress(knownProxy));
+
+            foreach (var knownNetwork in proxyForwardingOptions.KnownNetworks)
+                options.KnownNetworks.Add(ParseNetwork(knownNetwork));
+        });
     }
 
     /// <summary>
@@ -194,6 +229,39 @@ public static class ApiDependencyInjection
                 }
             });
         });
+    }
+
+    /// <summary>
+    /// Operação para converter um endereço IP configurado.
+    /// </summary>
+    /// <param name="ipAddress">Endereço IP informado na configuração.</param>
+    /// <returns>Endereço IP válido.</returns>
+    private static IPAddress ParseIpAddress(string ipAddress)
+    {
+        if (IPAddress.TryParse(ipAddress?.Trim(), out var parsedIpAddress))
+            return parsedIpAddress;
+
+        throw new InvalidOperationException($"O proxy confiável '{ipAddress}' não possui um endereço IP válido.");
+    }
+
+    /// <summary>
+    /// Operação para converter uma rede CIDR configurada.
+    /// </summary>
+    /// <param name="network">Rede informada na configuração.</param>
+    /// <returns>Rede válida para confiança dos headers encaminhados.</returns>
+    private static Microsoft.AspNetCore.HttpOverrides.IPNetwork ParseNetwork(string network)
+    {
+        var segments = (network ?? string.Empty)
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (segments.Length != 2
+            || !IPAddress.TryParse(segments[0], out var prefix)
+            || !int.TryParse(segments[1], out var prefixLength))
+        {
+            throw new InvalidOperationException($"A rede confiável '{network}' não está em formato CIDR válido.");
+        }
+
+        return new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, prefixLength);
     }
 
     #endregion

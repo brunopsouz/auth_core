@@ -68,6 +68,7 @@ public static class InfrastructureDependencyInjection
         AddSessionOptions(services, configuration);
         AddCookieOptions(services, configuration);
         AddCsrfOptions(services, configuration);
+        AddLoginRateLimitOptions(services, configuration);
         AddEmailVerificationOptions(services, configuration);
         AddOutboxOptions(services, configuration);
     }
@@ -237,6 +238,19 @@ public static class InfrastructureDependencyInjection
         services
             .AddOptions<CsrfOptions>()
             .Bind(configuration.GetSection(CsrfOptions.SectionName));
+    }
+
+    /// <summary>
+    /// Operação para adicionar as opções de limitação de login.
+    /// </summary>
+    /// <param name="services">Coleção de serviços da aplicação.</param>
+    /// <param name="configuration">Configuração da aplicação.</param>
+    private static void AddLoginRateLimitOptions(IServiceCollection services, IConfiguration configuration)
+    {
+        services
+            .AddOptions<LoginRateLimitOptions>()
+            .Bind(configuration.GetSection(LoginRateLimitOptions.SectionName))
+            .ValidateDataAnnotations();
     }
 
     /// <summary>

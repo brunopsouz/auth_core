@@ -38,6 +38,7 @@ public sealed class GetUserSessionsUseCase : IGetUserSessionsUseCase
         {
             CurrentSessionId = query.CurrentSessionId,
             Sessions = sessions
+                .OrderByDescending(session => session.LastSeenAtUtc ?? session.CreatedAtUtc)
                 .Select(session => new UserSessionResult
                 {
                     SessionId = session.SessionId,
