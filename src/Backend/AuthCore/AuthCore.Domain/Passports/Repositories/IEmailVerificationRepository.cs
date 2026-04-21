@@ -8,6 +8,13 @@ namespace AuthCore.Domain.Passports.Repositories;
 public interface IEmailVerificationRepository
 {
     /// <summary>
+    /// Operação para obter uma verificação pelo usuário, independente do estado atual.
+    /// </summary>
+    /// <param name="userId">Identificador interno do usuário.</param>
+    /// <returns>Verificação encontrada ou nula.</returns>
+    Task<EmailVerification?> GetByUserIdAsync(Guid userId);
+
+    /// <summary>
     /// Operação para adicionar uma verificação de e-mail.
     /// </summary>
     /// <param name="emailVerification">Verificação a ser persistida.</param>

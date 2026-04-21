@@ -5,11 +5,13 @@ using AuthCore.Application;
 using AuthCore.Domain.Common.Repositories;
 using AuthCore.Infrastructure;
 using AuthCore.Infrastructure.Configurations;
+using AuthCore.Infrastructure.Services.Messaging;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace AuthCore.IntegrationTests.SmokeTests;
@@ -39,7 +41,11 @@ public sealed class BootstrapSmokeTests
             ["RabbitMq:Port"] = "5672",
             ["RabbitMq:Username"] = "guest",
             ["RabbitMq:Password"] = "guest",
-            ["RabbitMq:EmailVerificationQueue"] = "auth.email-verification"
+            ["RabbitMq:EmailVerificationQueue"] = "auth.email-verification",
+            ["Outbox:Enabled"] = "false",
+            ["Outbox:BatchSize"] = "20",
+            ["Outbox:PollingIntervalSeconds"] = "10",
+            ["Outbox:MaxAttempts"] = "5"
         });
 
         builder.Services.AddControllers()
@@ -58,6 +64,8 @@ public sealed class BootstrapSmokeTests
         var refreshTokenService = scope.ServiceProvider.GetService<IRefreshTokenService>();
         var authenticationSchemeProvider = scope.ServiceProvider.GetService<IAuthenticationSchemeProvider>();
         var healthCheckService = scope.ServiceProvider.GetService<HealthCheckService>();
+        var outboxProcessor = scope.ServiceProvider.GetService<IOutboxProcessor>();
+        var hostedServices = app.Services.GetServices<IHostedService>();
 
         Assert.Equal("authcore-tests", jwtOptions.Issuer);
         Assert.Equal(7, jwtOptions.RefreshTokenLifetimeDays);
@@ -67,5 +75,7 @@ public sealed class BootstrapSmokeTests
         Assert.NotNull(refreshTokenService);
         Assert.NotNull(authenticationSchemeProvider);
         Assert.NotNull(healthCheckService);
+        Assert.NotNull(outboxProcessor);
+        Assert.Contains(hostedServices, service => service.GetType().Name == "OutboxHostedService");
     }
 }

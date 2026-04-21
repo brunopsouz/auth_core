@@ -18,9 +18,9 @@ Regra operacional adotada:
 
 ## Estado atual
 
-- Bloco atual concluído: `Bloco 5 - Modo Token Secundário`
-- Próximo bloco elegível: `Bloco 6 - Registro, OTP e Outbox`
-- Observação: o fluxo secundário JWT/refresh agora está exposto separadamente com `POST /auth/token`, `POST /auth/refresh` e `POST /auth/token/logout`, mantendo a trilha principal stateful como contrato primário.
+- Bloco atual concluído: `Bloco 7 - Worker e Fechamento Operacional`
+- Próximo bloco elegível: `Nenhum bloco pendente na spec atual`
+- Observação: o fluxo operacional agora possui processor de outbox, worker hospedado pela API, envio inicial por logger, métricas, health checks complementares e testes automatizados do processamento.
 
 ---
 
@@ -192,7 +192,7 @@ Comando de liberação sugerido:
 ## Bloco 6 - Registro, OTP e Outbox
 
 Status:
-- `Aguardando autorização`
+- `Concluído`
 
 Objetivo:
 - concluir o cadastro pendente, verificação de e-mail, reenvio e persistência resiliente do evento.
@@ -212,7 +212,7 @@ Critério de parada:
 - fluxo funcional: `register -> login(403) -> verify-email -> login(200)`.
 
 Autorização:
-- `Pendente`
+- `Executado`
 
 Comando de liberação sugerido:
 - `Autorizo o Bloco 6 - Registro, OTP e Outbox`
@@ -222,7 +222,7 @@ Comando de liberação sugerido:
 ## Bloco 7 - Worker e Fechamento Operacional
 
 Status:
-- `Aguardando autorização`
+- `Concluído`
 
 Objetivo:
 - fechar publicação/consumo, envio de e-mail e observabilidade final.
@@ -239,7 +239,7 @@ Critério de parada:
 - solução pronta para fluxo operacional completo dentro do escopo da spec atual.
 
 Autorização:
-- `Pendente`
+- `Executado`
 
 Comando de liberação sugerido:
 - `Autorizo o Bloco 7 - Worker e Fechamento Operacional`
@@ -253,5 +253,5 @@ Comando de liberação sugerido:
 - `Bloco 3 - Sessões por Device`: executado
 - `Bloco 4 - Hardening da Sessão`: executado
 - `Bloco 5 - Modo Token Secundário`: executado
-- `Bloco 6 - Registro, OTP e Outbox`: pendente
-- `Bloco 7 - Worker e Fechamento Operacional`: pendente
+- `Bloco 6 - Registro, OTP e Outbox`: executado
+- `Bloco 7 - Worker e Fechamento Operacional`: executado

@@ -100,46 +100,13 @@ public sealed class EmailVerificationRepository : IEmailVerificationRepository
     }
 
     /// <summary>
-    /// Operação para obter uma verificação pendente pelo e-mail.
-    /// </summary>
-    /// <param name="email">E-mail em verificação.</param>
-    /// <returns>Verificação encontrada ou nula.</returns>
-    public async Task<EmailVerification?> GetPendingByEmailAsync(string email)
-    {
-        const string sql = """
-            SELECT
-                "UserId",
-                "Email",
-                "TokenHash",
-                "ExpiresAtUtc",
-                "ConsumedAtUtc",
-                "RevokedAtUtc",
-                "AttemptCount",
-                "MaxAttempts",
-                "CooldownUntilUtc",
-                "LastSentAtUtc"
-            FROM "EmailVerificationTokens"
-            WHERE "Email" = @Email
-            LIMIT 1;
-            """;
-
-        var connection = await _databaseSession.GetOpenConnectionAsync();
-        await using var command = CreateCommand(connection, sql);
-        command.Parameters.AddWithValue("Email", email.Trim().ToLowerInvariant());
-
-        await using var reader = await command.ExecuteReaderAsync();
-
-        return await ReadAsync(reader);
-    }
-
-    /// <summary>
-    /// Operação para obter uma verificação ativa pelo usuário.
+    /// Operação para obter uma verificação pelo usuário, independente do estado atual.
     /// </summary>
     /// <param name="userId">Identificador interno do usuário.</param>
     /// <returns>Verificação encontrada ou nula.</returns>
-    public async Task<EmailVerification?> GetPendingByUserIdAsync(Guid userId)
+    public async Task<EmailVerification?> GetByUserIdAsync(Guid userId)
     {
-        const string sql = """
+        var sql = """
             SELECT
                 "UserId",
                 "Email",
@@ -153,12 +120,89 @@ public sealed class EmailVerificationRepository : IEmailVerificationRepository
                 "LastSentAtUtc"
             FROM "EmailVerificationTokens"
             WHERE "UserId" = @UserId
-            LIMIT 1;
-            """;
+            ORDER BY "LastSentAtUtc" DESC
+            LIMIT 1
+            """ + GetLockClause();
 
         var connection = await _databaseSession.GetOpenConnectionAsync();
         await using var command = CreateCommand(connection, sql);
         command.Parameters.AddWithValue("UserId", userId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+
+        return await ReadAsync(reader);
+    }
+
+    /// <summary>
+    /// Operação para obter uma verificação pendente pelo e-mail.
+    /// </summary>
+    /// <param name="email">E-mail em verificação.</param>
+    /// <returns>Verificação encontrada ou nula.</returns>
+    public async Task<EmailVerification?> GetPendingByEmailAsync(string email)
+    {
+        var sql = """
+            SELECT
+                "UserId",
+                "Email",
+                "TokenHash",
+                "ExpiresAtUtc",
+                "ConsumedAtUtc",
+                "RevokedAtUtc",
+                "AttemptCount",
+                "MaxAttempts",
+                "CooldownUntilUtc",
+                "LastSentAtUtc"
+            FROM "EmailVerificationTokens"
+            WHERE "Email" = @Email
+              AND "ConsumedAtUtc" IS NULL
+              AND "RevokedAtUtc" IS NULL
+              AND "ExpiresAtUtc" > @ReferenceAtUtc
+            ORDER BY "LastSentAtUtc" DESC
+            LIMIT 1
+            """ + GetLockClause();
+
+        var connection = await _databaseSession.GetOpenConnectionAsync();
+        await using var command = CreateCommand(connection, sql);
+        command.Parameters.AddWithValue("Email", email.Trim().ToLowerInvariant());
+        command.Parameters.AddWithValue("ReferenceAtUtc", DateTime.UtcNow);
+
+        await using var reader = await command.ExecuteReaderAsync();
+
+        return await ReadAsync(reader);
+    }
+
+    /// <summary>
+    /// Operação para obter uma verificação ativa pelo usuário.
+    /// </summary>
+    /// <param name="userId">Identificador interno do usuário.</param>
+    /// <returns>Verificação encontrada ou nula.</returns>
+    public async Task<EmailVerification?> GetPendingByUserIdAsync(Guid userId)
+    {
+        var sql = """
+            SELECT
+                "UserId",
+                "Email",
+                "TokenHash",
+                "ExpiresAtUtc",
+                "ConsumedAtUtc",
+                "RevokedAtUtc",
+                "AttemptCount",
+                "MaxAttempts",
+                "CooldownUntilUtc",
+                "LastSentAtUtc"
+            FROM "EmailVerificationTokens"
+            WHERE "UserId" = @UserId
+              AND "ConsumedAtUtc" IS NULL
+              AND "RevokedAtUtc" IS NULL
+              AND "ExpiresAtUtc" > @ReferenceAtUtc
+            ORDER BY "LastSentAtUtc" DESC
+            LIMIT 1
+            """ + GetLockClause();
+
+        var connection = await _databaseSession.GetOpenConnectionAsync();
+        await using var command = CreateCommand(connection, sql);
+        command.Parameters.AddWithValue("UserId", userId);
+        command.Parameters.AddWithValue("ReferenceAtUtc", DateTime.UtcNow);
 
         await using var reader = await command.ExecuteReaderAsync();
 
@@ -195,6 +239,19 @@ public sealed class EmailVerificationRepository : IEmailVerificationRepository
     private NpgsqlCommand CreateCommand(NpgsqlConnection connection, string sql)
     {
         return new NpgsqlCommand(sql, connection, _databaseSession.CurrentTransaction);
+    }
+
+    /// <summary>
+    /// Operação para obter a cláusula de lock quando a leitura estiver dentro de transação.
+    /// </summary>
+    /// <returns>Cláusula SQL complementar.</returns>
+    private string GetLockClause()
+    {
+        return _databaseSession.CurrentTransaction is null
+            ? ";"
+            : """
+                FOR UPDATE;
+                """;
     }
 
     /// <summary>

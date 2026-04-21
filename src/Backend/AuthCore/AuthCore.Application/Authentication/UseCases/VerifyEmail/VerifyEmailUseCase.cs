@@ -1,5 +1,6 @@
 using AuthCore.Domain.Common.Exceptions;
 using AuthCore.Domain.Common.Repositories;
+using AuthCore.Domain.Passports.Aggregates;
 using AuthCore.Domain.Passports.Repositories;
 using AuthCore.Domain.Passports.Services;
 using AuthCore.Domain.Users.Repositories;
@@ -11,6 +12,8 @@ namespace AuthCore.Application.Authentication.UseCases.VerifyEmail;
 /// </summary>
 public sealed class VerifyEmailUseCase : IVerifyEmailUseCase
 {
+    private const string INVALID_VERIFICATION_MESSAGE = "Não foi possível validar o código de verificação informado.";
+
     private readonly IEmailVerificationRepository _emailVerificationRepository;
     private readonly IEmailVerificationService _emailVerificationService;
     private readonly IUnitOfWork _unitOfWork;
@@ -52,35 +55,70 @@ public sealed class VerifyEmailUseCase : IVerifyEmailUseCase
         ArgumentNullException.ThrowIfNull(command);
 
         var normalizedEmail = NormalizeEmail(command.Email);
-        var emailVerification = await _emailVerificationRepository.GetPendingByEmailAsync(normalizedEmail)
-            ?? throw new NotFoundException("Nenhuma verificação pendente foi encontrada para o e-mail informado.");
-        var user = await _userReadRepository.GetByEmailAsync(normalizedEmail)
-            ?? throw new NotFoundException("Usuário não encontrado.");
-        var validatedVerification = emailVerification.ValidateCode(
-            _emailVerificationService.ComputeHash(command.Code),
-            DateTime.UtcNow);
-
         await _unitOfWork.BeginTransactionAsync();
+        var transactionCompleted = false;
 
         try
         {
+            var emailVerification = await _emailVerificationRepository.GetPendingByEmailAsync(normalizedEmail)
+                ?? throw CreateInvalidVerificationException();
+            var user = await _userReadRepository.GetByEmailAsync(normalizedEmail)
+                ?? throw CreateInvalidVerificationException();
+            var validatedVerification = ValidateCode(emailVerification, command.Code);
+
             await _emailVerificationRepository.UpdateAsync(validatedVerification);
 
-            if (!validatedVerification.ConsumedAtUtc.HasValue)
-                throw new DomainException("O código de verificação informado é inválido.");
+            if (validatedVerification.ConsumedAtUtc.HasValue)
+            {
+                user.VerifyEmail(validatedVerification.ConsumedAtUtc.Value);
+                await _userRepository.UpdateAsync(user);
+            }
 
-            user.VerifyEmail(validatedVerification.ConsumedAtUtc.Value);
-            await _userRepository.UpdateAsync(user);
             await _unitOfWork.CommitAsync();
+            transactionCompleted = true;
+
+            if (!validatedVerification.ConsumedAtUtc.HasValue)
+                throw CreateInvalidVerificationException();
         }
         catch
         {
-            await _unitOfWork.RollbackAsync();
+            if (!transactionCompleted)
+                await _unitOfWork.RollbackAsync();
+
             throw;
         }
     }
 
     #region Helpers
+
+    /// <summary>
+    /// Operação para validar o código OTP e normalizar falhas previsíveis.
+    /// </summary>
+    /// <param name="emailVerification">Verificação pendente do usuário.</param>
+    /// <param name="code">Código informado.</param>
+    /// <returns>Verificação atualizada após a validação.</returns>
+    private EmailVerification ValidateCode(EmailVerification emailVerification, string code)
+    {
+        try
+        {
+            return emailVerification.ValidateCode(
+                _emailVerificationService.ComputeHash(code),
+                DateTime.UtcNow);
+        }
+        catch (DomainException)
+        {
+            throw CreateInvalidVerificationException();
+        }
+    }
+
+    /// <summary>
+    /// Operação para criar a falha genérica de validação do código.
+    /// </summary>
+    /// <returns>Exceção de domínio padronizada.</returns>
+    private static DomainException CreateInvalidVerificationException()
+    {
+        return new DomainException(INVALID_VERIFICATION_MESSAGE);
+    }
 
     /// <summary>
     /// Operação para normalizar o e-mail informado.

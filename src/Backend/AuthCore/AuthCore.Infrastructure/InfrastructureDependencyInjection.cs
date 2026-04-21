@@ -102,6 +102,8 @@ public static class InfrastructureDependencyInjection
         services.AddScoped<ISessionService, SessionService>();
         services.AddScoped<IEmailVerificationService, Sha256EmailVerificationService>();
         services.AddScoped<IEmailSender, LoggingEmailSender>();
+        services.AddSingleton<OutboxMetrics>();
+        services.AddScoped<IOutboxProcessor, OutboxProcessor>();
     }
 
     /// <summary>

@@ -14,9 +14,10 @@ public sealed class LoginSessionUseCaseTests
         var passwordRepository = new FakePasswordRepository();
         var passwordEncripter = new FakePasswordEncripter { IsValidResult = true };
         var sessionStore = new FakeSessionStore();
+        var expiresAtUtc = DateTime.UtcNow.AddHours(8);
         var sessionService = new FakeSessionService
         {
-            ExpiresAtUtc = new DateTime(2026, 4, 20, 12, 0, 0, DateTimeKind.Utc)
+            ExpiresAtUtc = expiresAtUtc
         };
         var user = AuthenticationFixtures.CreateVerifiedUser();
         var password = AuthenticationFixtures.CreatePassword(user.Id, PasswordStatus.Active, failedAttempts: 2);
@@ -40,7 +41,7 @@ public sealed class LoginSessionUseCaseTests
 
         Assert.Equal(user.UserIdentifier, result.UserIdentifier);
         Assert.Equal(user.Email.Value, result.Email);
-        Assert.Equal(sessionService.ExpiresAtUtc, result.ExpiresAtUtc);
+        Assert.Equal(expiresAtUtc, result.ExpiresAtUtc);
 
         var updatedPassword = Assert.Single(passwordRepository.UpdatedPasswords);
         Assert.Equal(PasswordStatus.Active, updatedPassword.Status);
@@ -48,7 +49,7 @@ public sealed class LoginSessionUseCaseTests
 
         var savedSession = Assert.Single(sessionStore.SavedSessions);
         Assert.Equal(user.Id, savedSession.UserId);
-        Assert.Equal(sessionService.ExpiresAtUtc, savedSession.ExpiresAtUtc);
+        Assert.Equal(expiresAtUtc, savedSession.ExpiresAtUtc);
         Assert.Equal("127.0.0.1", savedSession.IpAddress);
         Assert.Equal("Mozilla/5.0", savedSession.UserAgent);
     }

@@ -13,8 +13,11 @@ using AuthCore.Application.Authentication.UseCases.LogoutAllSessions;
 using AuthCore.Application.Authentication.UseCases.LogoutCurrentSession;
 using AuthCore.Application.Authentication.UseCases.LogoutSession;
 using AuthCore.Application.Authentication.UseCases.RefreshSession;
+using AuthCore.Application.Authentication.UseCases.ResendVerification;
 using AuthCore.Application.Authentication.UseCases.RevokeUserSession;
+using AuthCore.Application.Authentication.UseCases.VerifyEmail;
 using AuthCore.Application.Common.Models.Responses;
+using AuthCore.Application.Users.UseCases.RegisterUser;
 using AuthCore.Domain.Common.Exceptions;
 using AuthCore.Infrastructure.Configurations;
 using Microsoft.AspNetCore.Builder;
@@ -34,6 +37,90 @@ namespace AuthCore.IntegrationTests.Authentication;
 /// </summary>
 public sealed class AuthControllerIntegrationTests
 {
+    [Fact]
+    public async Task Register_WhenUseCaseSucceeds_ShouldReturnCreatedWithRegisteredUserResponse()
+    {
+        var userIdentifier = Guid.NewGuid();
+        var useCase = new SpyRegisterUserUseCase
+        {
+            Result = new RegisterUserResult
+            {
+                UserIdentifier = userIdentifier,
+                FullName = "Bruno Silva",
+                Email = "bruno@authcore.dev"
+            }
+        };
+        var controller = CreateController();
+
+        var result = await controller.Register(useCase, new RequestRegisterUserJson
+        {
+            FirstName = "Bruno",
+            LastName = "Silva",
+            Email = "bruno@authcore.dev",
+            Contact = "11999999999",
+            Password = "ValidPassword#2026",
+            ConfirmPassword = "ValidPassword#2026"
+        });
+
+        var createdResult = Assert.IsType<CreatedResult>(result.Result);
+        var response = Assert.IsType<ResponseRegisteredUserJson>(createdResult.Value);
+
+        Assert.Equal("Bruno", useCase.LastCommand!.FirstName);
+        Assert.Equal("bruno@authcore.dev", useCase.LastCommand.Email);
+        Assert.Equal(userIdentifier, response.UserIdentifier);
+        Assert.Equal("Bruno Silva", response.FullName);
+        Assert.Equal("bruno@authcore.dev", response.Email);
+    }
+
+    [Fact]
+    public async Task VerifyEmail_WhenUseCaseSucceeds_ShouldReturnNoContentAndForwardCommand()
+    {
+        var useCase = new SpyVerifyEmailUseCase();
+        var controller = CreateController();
+
+        var result = await controller.VerifyEmail(useCase, new RequestVerifyEmailJson
+        {
+            Email = "bruno@authcore.dev",
+            Code = "123456"
+        });
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Equal("bruno@authcore.dev", useCase.LastCommand!.Email);
+        Assert.Equal("123456", useCase.LastCommand.Code);
+    }
+
+    [Fact]
+    public async Task VerifyEmail_WhenUseCaseThrowsNotFoundException_ShouldReturnBadRequestWithGenericResponse()
+    {
+        var useCase = new ThrowingVerifyEmailUseCase(new NotFoundException("Nenhuma verificação pendente foi encontrada para o e-mail informado."));
+        var controller = CreateController();
+
+        var result = await controller.VerifyEmail(useCase, new RequestVerifyEmailJson
+        {
+            Email = "missing@authcore.dev",
+            Code = "123456"
+        });
+
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+        var response = Assert.IsType<ResponseErrorJson>(badRequestResult.Value);
+
+        Assert.Equal(["Não foi possível validar o código de verificação informado."], response.Errors);
+    }
+
+    [Fact]
+    public async Task ResendVerification_WhenUseCaseThrowsForbiddenException_ShouldReturnNoContent()
+    {
+        var useCase = new ThrowingResendVerificationUseCase(new ForbiddenException("O reenvio da verificação ainda está em cooldown."));
+        var controller = CreateController();
+
+        var result = await controller.ResendVerification(useCase, new RequestResendVerificationJson
+        {
+            Email = "pending@authcore.dev"
+        });
+
+        Assert.IsType<NoContentResult>(result);
+    }
+
     [Fact]
     public async Task Login_WhenSessionUseCaseSucceeds_ShouldReturnOkWithCookieAndAuthenticatedUserResponse()
     {
@@ -663,6 +750,9 @@ public sealed class AuthControllerIntegrationTests
             .ToList();
 
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/login");
+        Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/register");
+        Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/verify-email");
+        Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/resend-verification");
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/token");
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/refresh");
         Assert.Contains(actions, action => action.AttributeRouteInfo?.Template == "api/auth/token/logout");
@@ -756,6 +846,60 @@ public sealed class AuthControllerIntegrationTests
         {
             LastCommand = command;
             return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class SpyRegisterUserUseCase : IRegisterUserUseCase
+    {
+        public RegisterUserCommand? LastCommand { get; private set; }
+
+        public RegisterUserResult Result { get; set; } = new();
+
+        public Task<RegisterUserResult> Execute(RegisterUserCommand command)
+        {
+            LastCommand = command;
+            return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class SpyVerifyEmailUseCase : IVerifyEmailUseCase
+    {
+        public VerifyEmailCommand? LastCommand { get; private set; }
+
+        public Task Execute(VerifyEmailCommand command)
+        {
+            LastCommand = command;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingVerifyEmailUseCase : IVerifyEmailUseCase
+    {
+        private readonly Exception _exception;
+
+        public ThrowingVerifyEmailUseCase(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public Task Execute(VerifyEmailCommand command)
+        {
+            return Task.FromException(_exception);
+        }
+    }
+
+    private sealed class ThrowingResendVerificationUseCase : IResendVerificationUseCase
+    {
+        private readonly Exception _exception;
+
+        public ThrowingResendVerificationUseCase(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public Task Execute(ResendVerificationCommand command)
+        {
+            return Task.FromException(_exception);
         }
     }
 

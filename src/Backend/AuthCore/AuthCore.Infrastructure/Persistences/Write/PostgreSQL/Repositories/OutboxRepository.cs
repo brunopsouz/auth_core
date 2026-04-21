@@ -67,8 +67,9 @@ public sealed class OutboxRepository : IOutboxRepository
     /// Operação para obter mensagens pendentes de processamento.
     /// </summary>
     /// <param name="take">Quantidade máxima de mensagens.</param>
+    /// <param name="maxAttempts">Quantidade máxima de tentativas permitidas.</param>
     /// <returns>Coleção de mensagens pendentes.</returns>
-    public async Task<IReadOnlyCollection<OutboxMessage>> GetPendingAsync(int take)
+    public async Task<IReadOnlyCollection<OutboxMessage>> GetPendingAsync(int take, int maxAttempts)
     {
         const string sql = """
             SELECT
@@ -81,13 +82,16 @@ public sealed class OutboxRepository : IOutboxRepository
                 "LastError"
             FROM "OutboxMessages"
             WHERE "ProcessedAtUtc" IS NULL
+                AND "AttemptCount" < @MaxAttempts
             ORDER BY "OccurredAtUtc" ASC
-            LIMIT @Take;
+            LIMIT @Take
+            FOR UPDATE SKIP LOCKED;
             """;
 
         var connection = await _databaseSession.GetOpenConnectionAsync();
         await using var command = CreateCommand(connection, sql);
         command.Parameters.AddWithValue("Take", take);
+        command.Parameters.AddWithValue("MaxAttempts", maxAttempts);
 
         await using var reader = await command.ExecuteReaderAsync();
         var messages = new List<OutboxMessage>();

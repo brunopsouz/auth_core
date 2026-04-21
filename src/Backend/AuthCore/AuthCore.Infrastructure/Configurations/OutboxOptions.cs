@@ -13,6 +13,11 @@ public sealed class OutboxOptions
     public const string SectionName = "Outbox";
 
     /// <summary>
+    /// Indica se o worker da outbox deve ser executado.
+    /// </summary>
+    public bool Enabled { get; init; } = true;
+
+    /// <summary>
     /// Quantidade de mensagens processadas por ciclo.
     /// </summary>
     [Range(1, 500)]
@@ -23,4 +28,10 @@ public sealed class OutboxOptions
     /// </summary>
     [Range(1, 300)]
     public int PollingIntervalSeconds { get; init; } = 10;
+
+    /// <summary>
+    /// Quantidade máxima de tentativas por mensagem.
+    /// </summary>
+    [Range(1, 100)]
+    public int MaxAttempts { get; init; } = 5;
 }

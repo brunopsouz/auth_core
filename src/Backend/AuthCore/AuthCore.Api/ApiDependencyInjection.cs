@@ -4,6 +4,7 @@ using AuthCore.Api.Authentication;
 using AuthCore.Api.Exceptions;
 using AuthCore.Api.HealthChecks;
 using AuthCore.Api.Security;
+using AuthCore.Api.Workers;
 using AuthCore.Infrastructure.Configurations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -48,7 +49,10 @@ public static class ApiDependencyInjection
         services.AddRouting(options => options.LowercaseUrls = true);
         services.AddAuthorization();
         services.AddHealthChecks()
-            .AddCheck<DatabaseHealthCheck>("postgresql");
+            .AddCheck<DatabaseHealthCheck>("postgresql")
+            .AddCheck<RedisHealthCheck>("redis")
+            .AddCheck<OutboxHealthCheck>("outbox");
+        services.AddHostedService<OutboxHostedService>();
 
         AddAuthentication(services, configuration);
         AddSwagger(services);

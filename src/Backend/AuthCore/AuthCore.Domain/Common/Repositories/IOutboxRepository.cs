@@ -17,8 +17,9 @@ public interface IOutboxRepository
     /// Operação para obter mensagens pendentes de processamento.
     /// </summary>
     /// <param name="take">Quantidade máxima de mensagens.</param>
+    /// <param name="maxAttempts">Quantidade máxima de tentativas permitidas.</param>
     /// <returns>Coleção de mensagens pendentes.</returns>
-    Task<IReadOnlyCollection<OutboxMessage>> GetPendingAsync(int take);
+    Task<IReadOnlyCollection<OutboxMessage>> GetPendingAsync(int take, int maxAttempts);
 
     /// <summary>
     /// Operação para atualizar uma mensagem de outbox.

@@ -1,6 +1,8 @@
 using AuthCore.Domain.Common.Enums;
+using AuthCore.Domain.Common.DomainEvents;
 using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Aggregates;
+using AuthCore.Domain.Passports.Models;
 using AuthCore.Domain.Passports.Repositories;
 using AuthCore.Domain.Passports.Services;
 using AuthCore.Domain.Security.Cryptography;
@@ -115,6 +117,91 @@ internal sealed class FakeUserRepository : IUserRepository
     }
 }
 
+internal sealed class FakeEmailVerificationRepository : IEmailVerificationRepository
+{
+    private readonly Dictionary<Guid, EmailVerification> _verificationsByUserId = [];
+
+    public List<EmailVerification> AddedVerifications { get; } = [];
+
+    public List<EmailVerification> UpdatedVerifications { get; } = [];
+
+    public Task AddAsync(EmailVerification emailVerification)
+    {
+        AddedVerifications.Add(emailVerification);
+        _verificationsByUserId[emailVerification.UserId] = emailVerification;
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateAsync(EmailVerification emailVerification)
+    {
+        UpdatedVerifications.Add(emailVerification);
+        _verificationsByUserId[emailVerification.UserId] = emailVerification;
+        return Task.CompletedTask;
+    }
+
+    public Task<EmailVerification?> GetPendingByEmailAsync(string email)
+    {
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var verification = _verificationsByUserId.Values
+            .Where(current => current.Email == normalizedEmail)
+            .OrderByDescending(current => current.LastSentAtUtc)
+            .FirstOrDefault(current => current.IsActiveAt(DateTime.UtcNow));
+
+        return Task.FromResult(verification);
+    }
+
+    public Task<EmailVerification?> GetByUserIdAsync(Guid userId)
+    {
+        _verificationsByUserId.TryGetValue(userId, out var verification);
+
+        return Task.FromResult(verification);
+    }
+
+    public Task<EmailVerification?> GetPendingByUserIdAsync(Guid userId)
+    {
+        _verificationsByUserId.TryGetValue(userId, out var verification);
+
+        if (verification is not null && !verification.IsActiveAt(DateTime.UtcNow))
+            verification = null;
+
+        return Task.FromResult(verification);
+    }
+
+    public void Store(EmailVerification emailVerification)
+    {
+        _verificationsByUserId[emailVerification.UserId] = emailVerification;
+    }
+}
+
+internal sealed class FakeOutboxRepository : IOutboxRepository
+{
+    public List<OutboxMessage> AddedMessages { get; } = [];
+
+    public List<OutboxMessage> UpdatedMessages { get; } = [];
+
+    public Task AddAsync(OutboxMessage message)
+    {
+        AddedMessages.Add(message);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyCollection<OutboxMessage>> GetPendingAsync(int take, int maxAttempts)
+    {
+        IReadOnlyCollection<OutboxMessage> messages = AddedMessages
+            .Where(message => message.ProcessedAtUtc is null && message.AttemptCount < maxAttempts)
+            .Take(take)
+            .ToArray();
+
+        return Task.FromResult(messages);
+    }
+
+    public Task UpdateAsync(OutboxMessage message)
+    {
+        UpdatedMessages.Add(message);
+        return Task.CompletedTask;
+    }
+}
+
 internal sealed class FakeRefreshTokenRepository : IRefreshTokenRepository
 {
     private readonly Dictionary<string, RefreshToken> _refreshTokensByHash = [];
@@ -206,7 +293,7 @@ internal sealed class FakeRefreshTokenService : IRefreshTokenService
         Hash = "refresh-token-hash"
     };
 
-    public DateTime ExpiresAtUtc { get; set; } = new DateTime(2026, 4, 27, 12, 0, 0, DateTimeKind.Utc);
+    public DateTime? ExpiresAtUtc { get; set; }
 
     public RefreshTokenMaterial Create()
     {
@@ -220,7 +307,47 @@ internal sealed class FakeRefreshTokenService : IRefreshTokenService
 
     public DateTime GetExpiresAtUtc()
     {
-        return ExpiresAtUtc;
+        return ExpiresAtUtc ?? DateTime.UtcNow.AddDays(7);
+    }
+}
+
+internal sealed class FakeEmailVerificationService : IEmailVerificationService
+{
+    public EmailVerificationMaterial Material { get; set; } = new()
+    {
+        Code = "123456",
+        Hash = "otp-hash"
+    };
+
+    public DateTime? ExpiresAtUtc { get; set; }
+
+    public DateTime? CooldownUntilUtc { get; set; }
+
+    public int MaxAttempts { get; set; } = 5;
+
+    public EmailVerificationMaterial Create()
+    {
+        return Material;
+    }
+
+    public string ComputeHash(string code)
+    {
+        return $"{code.Trim()}-hash";
+    }
+
+    public DateTime GetExpiresAtUtc()
+    {
+        return ExpiresAtUtc ?? DateTime.UtcNow.AddMinutes(15);
+    }
+
+    public DateTime GetCooldownUntilUtc()
+    {
+        return CooldownUntilUtc ?? DateTime.UtcNow.AddMinutes(1);
+    }
+
+    public int GetMaxAttempts()
+    {
+        return MaxAttempts;
     }
 }
 
@@ -283,18 +410,18 @@ internal sealed class FakeSessionService : ISessionService
 {
     public bool UseSlidingExpiration { get; set; } = true;
 
-    public DateTime ExpiresAtUtc { get; set; } = new DateTime(2026, 4, 20, 12, 0, 0, DateTimeKind.Utc);
+    public DateTime? ExpiresAtUtc { get; set; }
 
-    public DateTime SlidingExpiresAtUtc { get; set; } = new DateTime(2026, 4, 20, 13, 0, 0, DateTimeKind.Utc);
+    public DateTime? SlidingExpiresAtUtc { get; set; }
 
     public DateTime GetExpiresAtUtc()
     {
-        return ExpiresAtUtc;
+        return ExpiresAtUtc ?? DateTime.UtcNow.AddHours(8);
     }
 
     public DateTime GetSlidingExpiresAtUtc(DateTime referenceAtUtc)
     {
-        return SlidingExpiresAtUtc;
+        return SlidingExpiresAtUtc ?? referenceAtUtc.AddHours(8);
     }
 }
 

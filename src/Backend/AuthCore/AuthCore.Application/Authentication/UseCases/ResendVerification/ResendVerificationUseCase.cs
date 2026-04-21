@@ -1,6 +1,5 @@
 using System.Text.Json;
 using AuthCore.Domain.Common.DomainEvents;
-using AuthCore.Domain.Common.Exceptions;
 using AuthCore.Domain.Common.Repositories;
 using AuthCore.Domain.Passports.Aggregates;
 using AuthCore.Domain.Passports.Repositories;
@@ -56,44 +55,48 @@ public sealed class ResendVerificationUseCase : IResendVerificationUseCase
         ArgumentNullException.ThrowIfNull(command);
 
         var normalizedEmail = NormalizeEmail(command.Email);
-        var user = await _userReadRepository.GetByEmailAsync(normalizedEmail)
-            ?? throw new NotFoundException("Usuário não encontrado.");
+        var user = await _userReadRepository.GetByEmailAsync(normalizedEmail);
 
-        if (user.Status != UserStatus.PendingEmailVerification)
+        if (user is null || user.Status != UserStatus.PendingEmailVerification)
             return;
 
-        var existingVerification = await _emailVerificationRepository.GetPendingByUserIdAsync(user.Id);
         var nowUtc = DateTime.UtcNow;
-
-        if (existingVerification is not null && existingVerification.IsInCooldownAt(nowUtc))
-            throw new ForbiddenException("O reenvio da verificação ainda está em cooldown.");
-
-        var material = _emailVerificationService.Create();
-        var verification = EmailVerification.Issue(
-            user.Id,
-            user.Email.Value,
-            material.Hash,
-            _emailVerificationService.GetExpiresAtUtc(),
-            _emailVerificationService.GetMaxAttempts(),
-            _emailVerificationService.GetCooldownUntilUtc(),
-            nowUtc);
-        var outboxEvent = new EmailVerificationRequested
-        {
-            UserId = user.Id,
-            Email = user.Email.Value,
-            Code = material.Code,
-            RequestedAtUtc = nowUtc
-        };
-        outboxEvent.Validate();
-        var outboxMessage = OutboxMessage.Create(
-            nameof(EmailVerificationRequested),
-            JsonSerializer.Serialize(outboxEvent),
-            nowUtc);
-
         await _unitOfWork.BeginTransactionAsync();
 
         try
         {
+            var existingVerification = await _emailVerificationRepository.GetByUserIdAsync(user.Id);
+
+            if (existingVerification is not null
+                && existingVerification.IsActiveAt(nowUtc)
+                && existingVerification.IsInCooldownAt(nowUtc))
+            {
+                await _unitOfWork.CommitAsync();
+                return;
+            }
+
+            var material = _emailVerificationService.Create();
+            var verification = EmailVerification.Issue(
+                user.Id,
+                user.Email.Value,
+                material.Hash,
+                _emailVerificationService.GetExpiresAtUtc(),
+                _emailVerificationService.GetMaxAttempts(),
+                _emailVerificationService.GetCooldownUntilUtc(),
+                nowUtc);
+            var outboxEvent = new EmailVerificationRequested
+            {
+                UserId = user.Id,
+                Email = user.Email.Value,
+                Code = material.Code,
+                RequestedAtUtc = nowUtc
+            };
+            outboxEvent.Validate();
+            var outboxMessage = OutboxMessage.Create(
+                nameof(EmailVerificationRequested),
+                JsonSerializer.Serialize(outboxEvent),
+                nowUtc);
+
             if (existingVerification is null)
                 await _emailVerificationRepository.AddAsync(verification);
             else

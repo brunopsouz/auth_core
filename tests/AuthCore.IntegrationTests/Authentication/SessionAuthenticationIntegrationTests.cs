@@ -198,7 +198,7 @@ public sealed class SessionAuthenticationIntegrationTests
         var sessionService = new FixedSessionService
         {
             UseSlidingExpiration = true,
-            SlidingExpiresAtUtc = new DateTime(2026, 4, 20, 13, 0, 0, DateTimeKind.Utc)
+            SlidingExpiresAtUtc = DateTime.UtcNow.AddHours(8)
         };
         var provider = BuildServiceProvider(
             userRepository,
@@ -612,9 +612,9 @@ public sealed class SessionAuthenticationIntegrationTests
     {
         public bool UseSlidingExpiration { get; set; }
 
-        public DateTime ExpiresAtUtc { get; set; } = new DateTime(2026, 4, 20, 12, 0, 0, DateTimeKind.Utc);
+        public DateTime ExpiresAtUtc { get; set; } = DateTime.UtcNow.AddHours(8);
 
-        public DateTime SlidingExpiresAtUtc { get; set; } = new DateTime(2026, 4, 20, 13, 0, 0, DateTimeKind.Utc);
+        public DateTime SlidingExpiresAtUtc { get; set; } = DateTime.UtcNow.AddHours(9);
 
         public DateTime GetExpiresAtUtc()
         {
